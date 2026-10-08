@@ -6,7 +6,7 @@ Bike route planner with a funny storytelling ride guide. Built for the **DEV Hac
 - **Deadline: Sunday 11 Oct 2026.** Winners the week of 12 Oct.
 - Submit one DEV post with tags `#devchallenge #hf26challenge` and the submission template. Writing quality counts most.
 - Bonus points for taking it outside and telling how it went.
-- Last updated: 8 Oct 2026, 22:30. Latest commit: `3826f00`. Nothing pushed yet (no GitHub remote).
+- Last updated: 8 Oct 2026, night. Live guide and launch prep in progress (3 agents). Nothing pushed yet (no GitHub remote).
 
 ## Where we are
 
@@ -84,7 +84,7 @@ See `.env.example`.
 
 ## Next steps
 
-### 1. Live guide (next to build, ~2-3 h, two agents: backend + page)
+### 1. Live guide (in progress since 8 Oct night, two agents: backend + page)
 
 Gemma now answers in ~2 s, so the guide can react **while riding**:
 
@@ -102,12 +102,29 @@ Gemma now answers in ~2 s, so the guide can react **while riding**:
 - Build: a `POST /api/live` endpoint (event type + live context → a short line), a reroute endpoint, and
   `web/js/live.js`, which watches the ride and triggers events. Test it in Simulate and live.
 
-### 2. Ship it (Friday)
+### 2. Launch plan (Friday)
 
-- [ ] Create a GitHub repo (e.g. `spoke-and-story`) and push.
-- [ ] Deploy on Render with `render.yaml` (starter plan, Python 3.12.8, `--no-access-log`). Set the env vars there.
-- [ ] Optional: create a Sentry project, set `SENTRY_DSN` locally and on Render, and grab trace screenshots for the post.
-- [ ] Rename the folder and the Render service if needed. Delete the leftover Backboard assistants.
+The deployed HTTPS URL is needed for Saturday too: phones only give GPS to `https://` pages.
+
+**Prep (launch agent, running since 8 Oct night, local only, nothing pushed or bought):**
+- [ ] Secrets scan of the files and the whole git history. Also list the commit author emails, since a public repo shows them.
+- [ ] MIT `LICENSE` and a "Credits and licenses" section: Gemma, Kokoro, OSM (ODbL), Wikipedia, Photon, ORS, Leaflet.
+- [ ] Public README: what it is, how it works, run locally, deploy, privacy, voice model download size.
+- [ ] Rate limit on the expensive endpoints (`app/limits.py`) so a bot can't burn the Backboard credit or the ORS quota.
+- [ ] Deploy check: fresh Python 3.12 install, tests, and the app started with Render's start command.
+- [ ] Step-by-step launch checklist (below gets filled from it).
+
+**Launch (needs Danial, about 30-45 min):**
+- [ ] GitHub: create a public repo `spoke-and-story` on the personal account and push.
+- [ ] Render: New → Blueprint → pick the repo → paste the env vars (`ORS_API_KEY`, `GEMINI_API_KEY`,
+      `BACKBOARD_API_KEY`, `SENTRY_DSN`). Starter plan is paid from the $50 credit.
+- [ ] Sentry (recommended, ~10 min): free personal account → Python/FastAPI project → DSN into `.env` and Render.
+      The code is already there. It's a $100 prize category, and a trace of "story = outline + chapters in parallel"
+      is a nice picture for the post.
+- [ ] Domain (optional): `spoke-story.tech` or `spoke-and-story.com` (both free on 8 Oct). Without one,
+      `spoke-and-story.onrender.com` works fine.
+- [ ] Smoke test on the live URL: search, routes, pick, Simulate with Santa, the live guide, `/api/stats`.
+- [ ] Clean-up: delete the 5 leftover Backboard "Default Assistant"s. Rename the folder if wanted.
 
 ### 3. Ride and record (Saturday)
 
