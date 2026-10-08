@@ -192,6 +192,7 @@ async function mockStory(route) {
   await sleep(1200);
   const at = (share) => Math.round((route.coords.length - 1) * share);
   return {
+    thread: 'Santa lost his reading glasses somewhere around the lake and the rider is helping him look.',
     intro: 'This is the journey around Lake Como! Fifty kilometres, a few hills, and me talking the whole way. Lucky you.',
     turn_lines: ['Hold that thought, {turn}!', 'Plot twist: {turn}.', 'Before I say anything else, {turn}.', 'Eyes up, {turn}.', 'Quick one: {turn}.'],
     finish: 'You made it back! Your legs deserve a gelato. Now go touch some grass.',
@@ -200,5 +201,59 @@ async function mockStory(route) {
       { index: at(0.45), place: 'Mandello del Lario', text: 'Coming up: Mandello del Lario, home of Moto Guzzi motorcycles since 1921. Yes, they have engines. No, you cannot borrow one for the next climb.' },
       { index: at(0.7), place: 'Varenna', text: 'Across the water is Varenna, pastel houses and people eating gelato by the lake. While you climb. Rude, honestly.' },
     ],
+  };
+}
+
+async function mockLive({ event, context: c }) {
+  await sleep(1500);
+  const speed = Math.round(c.speed_kmh);
+  return {
+    text: {
+      chapter: `Live from ${c.place}, at ${speed} km/h with ${Math.round(c.km_left)} km to go. ${(c.base || '').split('. ')[0]}.`,
+      speed: c.reason === 'grind'
+        ? `${c.grade_pct} percent and you're still turning the pedals. Respect.`
+        : `${speed} km/h! New top speed. Even my sleigh needs a permit for that.`,
+      spot: `Coming up: ${c.place}, ${c.base}. Not stopping? Your loss.`,
+      reroute: `Plot twist: a new route. ${Math.round(c.km_left)} km to go, and I'll pretend this was the plan all along.`,
+    }[event] || '',
+  };
+}
+
+async function mockSpots(coords) {
+  await sleep(800);
+  const spot = (name, kind, note, share) => {
+    const index = Math.round((coords.length - 1) * share);
+    return { name, kind, note, lat: coords[index][0], lon: coords[index][1], index };
+  };
+  return {
+    spots: [
+      spot('Osteria del Ponte', 'restaurant', 'restaurant, since 1923', 0.33),
+      spot('Bar Sport', 'bar', 'bar, historic', 0.58),
+      spot('Gelateria Lariana', 'ice_cream', 'ice cream shop, since 1951', 0.85),
+    ],
+  };
+}
+
+// Straight lines through the points, about every 100 m: enough to test swapping the route in.
+async function mockReroute({ points }) {
+  await sleep(1200);
+  const coords = [];
+  for (let i = 1; i < points.length; i++) {
+    const [a, b] = [points[i - 1], points[i]];
+    const n = Math.max(1, Math.round(haversineKm(a, b) / 0.1));
+    for (let s = 0; s < n; s++) coords.push([a[0] + ((b[0] - a[0]) * s) / n, a[1] + ((b[1] - a[1]) * s) / n, 210]);
+  }
+  coords.push([...points[points.length - 1], 210]);
+  const km = cumulativeKm(coords);
+  const distance = km[km.length - 1];
+  return {
+    id: 'R',
+    distance_km: +distance.toFixed(1),
+    duration_min: Math.round((distance / 20) * 60),
+    climb_m: 0,
+    max_grade_pct: 0,
+    coords,
+    profile: coords.map((c, i) => [+km[i].toFixed(2), c[2]]),
+    steps: [{ index: 0, type: 11, text: 'Head back toward the route' }, { index: coords.length - 1, type: 10, text: 'Arrive at the finish' }],
   };
 }

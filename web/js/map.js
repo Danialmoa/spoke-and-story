@@ -1,5 +1,6 @@
-const map = { m: null, street: null, sat: null, here: null, base: null, routes: null, marks: null, hover: null, tilesOk: false, paper: false, geoDrawn: false };
+const map = { m: null, street: null, sat: null, here: null, base: null, routes: null, marks: null, spots: null, hover: null, tilesOk: false, paper: false, geoDrawn: false };
 const FLAG = '<svg viewBox="0 0 22 34" aria-hidden="true"><path class="flag-pole" d="M3 2v31"/><path class="flag-cloth" d="M4 3h15l-4 5 4 5H4z"/></svg>';
+const SPOT_ICON = { restaurant: '🍝', cafe: '☕', bar: '🍷', pub: '🍺', biergarten: '🍺', ice_cream: '🍦' };
 
 function initMap() {
   if (!window.L) {
@@ -28,6 +29,7 @@ function initMap() {
   map.base = L.layerGroup().addTo(m);
   map.routes = L.layerGroup().addTo(m);
   map.marks = L.layerGroup().addTo(m);
+  map.spots = L.layerGroup().addTo(m);
   map.hover = L.circleMarker([0, 0], { radius: 7, className: 'hover-dot', interactive: false });
   map.m = m;
 }
@@ -86,6 +88,16 @@ function addKmMarkers(route) {
   }
 }
 
+const latlngs = (r) => r.coords.map((c) => [c[0], c[1]]);
+
+function drawLine(route) {
+  L.polyline(latlngs(route), { className: 'route-casing', interactive: false }).addTo(map.routes);
+  L.polyline(latlngs(route), { className: 'route-sel', interactive: false }).addTo(map.routes);
+  const first = route.coords[0];
+  const last = route.coords[route.coords.length - 1];
+  if (haversineKm(first, last) > 0.3) pin([last[0], last[1]], 'Finish');
+}
+
 function drawRoutes() {
   if (!map.m) return;
   map.routes.clearLayers();
@@ -93,20 +105,32 @@ function drawRoutes() {
   hideHover();
   const res = state.result;
   if (!res) return;
-  const latlngs = (r) => r.coords.map((c) => [c[0], c[1]]);
   const sel = currentRoute();
   res.routes.filter((r) => r !== sel).forEach((r) => {
     L.polyline(latlngs(r), { className: 'route-alt' }).on('click', () => selectRoute(r.id)).addTo(map.routes);
   });
   if (sel) {
-    L.polyline(latlngs(sel), { className: 'route-casing', interactive: false }).addTo(map.routes);
-    L.polyline(latlngs(sel), { className: 'route-sel', interactive: false }).addTo(map.routes);
+    drawLine(sel);
     addKmMarkers(sel);
-    const first = sel.coords[0];
-    const last = sel.coords[sel.coords.length - 1];
-    if (haversineKm(first, last) > 0.3) pin([last[0], last[1]], 'Finish');
   }
   pin([res.start.lat, res.start.lon], 'Start');
+}
+
+// After a reroute only the new line is shown: the old km markers and alternatives would point the wrong way.
+function drawRideRoute(route) {
+  if (!map.m) return;
+  map.routes.clearLayers();
+  map.marks.clearLayers();
+  drawLine(route);
+}
+
+function drawSpots(spots) {
+  if (!map.m) return;
+  map.spots.clearLayers();
+  spots.forEach((s) => {
+    const icon = L.divIcon({ className: 'spot-pin', html: `<span>${SPOT_ICON[s.kind] || '★'}</span>`, iconSize: [0, 0] });
+    L.marker([s.lat, s.lon], { icon, interactive: false, keyboard: false, title: s.name }).addTo(map.spots);
+  });
 }
 
 function fitRoutes() {

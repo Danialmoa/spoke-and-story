@@ -91,12 +91,35 @@ FLAVOURS = [
     "a tiny mystery",
 ]
 
+LIVE_PROMPT = f"""{VOICE}
+
+You are riding along with the rider right now and say one line, live. You get what you have to say, the bike and the
+moment: speed_kmh, top_speed_kmh, km_done, km_left, grade_pct (the slope right now), climb_done_m, local_time.
+Use a number only when it is notable (a big top speed, a steep slope, almost there, lunchtime, getting late);
+never read out a list of stats. Never repeat a line, a joke or an opening from "Already said".
+Use only the facts you are given; never invent history, dates or numbers. Plain spoken English: no emojis, no lists.
+Reply with JSON only: {{"text": "..."}}"""
+LIVE_TASKS = {
+    "chapter": "Tell the chapter of the tale for this place (place) as the rider rolls up to it. Rewrite the "
+    "prepared chapter (base) for this moment: keep its facts and the running joke (thread), follow its beat. "
+    "50-90 words, and end with a hook to what comes next.",
+    "top_speed": "The rider just hit a new top speed. React in 1-2 sentences, at most 30 words: celebrate it and wink "
+    "at safety without lecturing.",
+    "grind": "The rider is crawling up a steep climb. Cheer them on in 1-2 sentences, at most 30 words.",
+    "spot": "The rider is about to pass this spot (place); it is just ahead, so speak in the present tense. Say 1-2 "
+    "playful sentences about it, at most 35 words, using only the facts in base. For example, dare them to stop for a "
+    "coffee, a gelato or a beer, whatever fits.",
+    "reroute": "The rider left the planned route and a new route was just found. Announce it like a plot twist in the "
+    "tale, at most 30 words. No blame.",
+}
+
 TASKS = {
     CHAT_PROMPT: "chat",
     PICK_PROMPT: "pick route",
     WEEKLY_PROMPT: "weekly ideas",
     OUTLINE_PROMPT: "story outline",
     CHAPTER_PROMPT: "story chapter",
+    LIVE_PROMPT: "live line",
 }
 
 
@@ -252,3 +275,16 @@ def ride_story(ride: dict, places: list[dict]) -> dict:
     with ThreadPoolExecutor(4) as pool:
         stories = list(pool.map(lambda i: _chapter(ride, outline, places, i), range(len(places))))
     return {**outline, "stories": stories}
+
+
+def live_line(event: str, bike: str, context: dict) -> str:
+    """One line said while riding ("" when the model fails; the page then plays its pre-written line)."""
+    task = LIVE_TASKS[(context.get("reason") or "top_speed") if event == "speed" else event]
+    moment = {
+        k: round(v, 1) if isinstance(v, float) else v for k, v in context.items() if v is not None and k != "said"
+    }
+    content = f"{task}\n\nBike: {bike}\n\nThe moment:\n{json.dumps(moment, ensure_ascii=False)}"
+    if context.get("said"):
+        content += "\n\nAlready said:\n" + "\n".join(context["said"])
+    text = _try_complete(LIVE_PROMPT, content, 0.9).get("text")
+    return text.strip() if isinstance(text, str) else ""

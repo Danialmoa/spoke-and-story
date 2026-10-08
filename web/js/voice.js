@@ -24,7 +24,7 @@ self.onmessage = ({ data }) => {
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const VOICE_STATUS = {
   idle: '',
-  loading: "Loading Kokoro, an open-source voice model (~90 MB, first ride only)… you'll hear the browser voice until it's ready.",
+  loading: "Loading Kokoro, an open-source voice model (~115 MB, first ride only)… you'll hear the browser voice until it's ready.",
   ready: 'Voice: Santa (Kokoro, running on this device)',
   failed: "Kokoro couldn't load here, so you'll hear your browser's voice.",
 };
@@ -35,9 +35,10 @@ const voice = {
   status: 'idle',
   worker: null,
   ready: null,
-  jobs: new Map(),
-  nextId: 0,
+  todo: [],
+  job: null,
   cache: new Map(),
+  made: new Set(),
   player: new Audio(),
   queue: [],
   busy: false,
@@ -45,18 +46,39 @@ const voice = {
   session: 0,
 };
 
-function kokoro(message) {
+// Lines go to the worker one at a time so live lines can jump ahead of the ride's other lines, which are made far in
+// advance. The worker can't reorder them itself: it doesn't read new messages while it's generating.
+function kokoro(message, first = false) {
   return new Promise((resolve, reject) => {
-    const id = ++voice.nextId;
-    voice.jobs.set(id, { resolve, reject });
-    voice.worker.postMessage({ id, ...message });
+    enqueue({ message, first, resolve, reject });
+    nextKokoro();
   });
+}
+
+function enqueue(job) {
+  const at = job.first ? voice.todo.findIndex((j) => !j.first) : -1;
+  voice.todo.splice(at < 0 ? voice.todo.length : at, 0, job);
+}
+
+// A line still waiting its turn moves into the fast lane, e.g. the next turn while live lines are being made.
+function hurry(text) {
+  const i = voice.todo.findIndex((job) => !job.first && job.message.text === text);
+  if (i < 0) return;
+  const [job] = voice.todo.splice(i, 1);
+  enqueue({ ...job, first: true });
+}
+
+function nextKokoro() {
+  if (voice.job || !voice.todo.length) return;
+  voice.job = voice.todo.shift();
+  voice.worker.postMessage(voice.job.message);
 }
 
 function failVoice() {
   voice.status = 'failed';
-  voice.jobs.forEach((job) => job.reject(new Error('Kokoro is not available')));
-  voice.jobs.clear();
+  [voice.job, ...voice.todo].forEach((job) => job?.reject(new Error('Kokoro is not available')));
+  voice.job = null;
+  voice.todo = [];
   renderVoiceStatus();
 }
 
@@ -69,10 +91,11 @@ function loadVoice() {
       return;
     }
     voice.worker.onmessage = ({ data }) => {
-      const job = voice.jobs.get(data.id);
-      voice.jobs.delete(data.id);
+      const { job } = voice;
+      voice.job = null;
       if (data.error) job?.reject(new Error(data.error));
       else job?.resolve(data.blob ?? true);
+      nextKokoro();
     };
     voice.worker.onerror = failVoice;
     voice.status = 'loading';
@@ -89,14 +112,22 @@ function renderVoiceStatus() {
 }
 
 // Lines wait for Santa to finish loading instead of being skipped, so they can be queued as soon as the story is here.
-function prepare(text) {
+function prepare(text, { first = false } = {}) {
   if (!text || !voice.ready || voice.status === 'failed') return null;
   if (!voice.cache.has(text)) {
-    const audio = voice.ready.then(() => (voice.status === 'ready' ? kokoro({ text, voice: VOICE }) : null));
-    voice.cache.set(text, audio.then((blob) => (blob ? URL.createObjectURL(blob) : null), () => null));
+    const audio = voice.ready.then(() => (voice.status === 'ready' ? kokoro({ text, voice: VOICE }, first) : null));
+    voice.cache.set(text, audio.then((blob) => {
+      if (!blob) return null;
+      voice.made.add(text);
+      return URL.createObjectURL(blob);
+    }, () => null));
+  } else if (first) {
+    hurry(text);
   }
   return voice.cache.get(text);
 }
+
+const audioReady = (text) => voice.status === 'failed' || voice.made.has(text);
 
 // iOS only lets a page play sound after it has played something during a tap, so call this from the ride-start click.
 function unlockAudio() {
@@ -123,6 +154,7 @@ async function drainVoice() {
   while (voice.queue.length) {
     const item = voice.queue.shift();
     if (item.until != null && ride.km > item.until) continue;
+    if (!item.urgent) ride.said = [...ride.said, item.text].slice(-3);
     showSubtitle(item.title ? item : idleSubtitle());
     await speakOne(item);
   }

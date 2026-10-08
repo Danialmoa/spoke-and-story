@@ -55,7 +55,9 @@ async function readJson(res) {
   return data;
 }
 const getJson = async (url) => readJson(await fetch(url));
-const postJson = async (url, body) => readJson(await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+const postJson = async (url, body, timeoutMs = null) => readJson(await fetch(url, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : null,
+}));
 
 const state = {
   live: false,
@@ -82,6 +84,10 @@ const api = {
   places: (q, near) => (state.live
     ? getJson(`/api/places?q=${encodeURIComponent(q)}${near ? `&near=${encodeURIComponent(near)}` : ''}`)
     : mockPlaces(q)),
+  // The server can take 20-40 s when it falls back to Google; by then the pre-written line is the better choice.
+  live: (body) => (state.live ? postJson('/api/live', body, 8000) : mockLive(body)),
+  spots: (coords) => (state.live ? postJson('/api/spots', { coords }) : mockSpots(coords)),
+  reroute: (body) => (state.live ? postJson('/api/reroute', body) : mockReroute(body)),
   event: (body) => {
     if (state.live) postJson('/api/event', body).catch(() => {});
   },

@@ -321,6 +321,7 @@ svg.leaflet-zoom-animated { will-change: transform; }
 .start-pin span { margin-bottom: 14px; padding: 3px 5px; background: var(--map-paper); color: var(--map-ink); border: 2px solid var(--map-ink); font: 700 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
 .flag-pole { stroke: var(--map-ink); stroke-width: 2.5; stroke-linecap: round; fill: none; }
 .flag-cloth { fill: var(--route); stroke: var(--map-ink); stroke-width: 2; stroke-linejoin: round; }
+.spot-pin span { display: grid; place-items: center; width: 24px; height: 24px; transform: translate(-50%, -50%); background: var(--map-paper); border: 2px solid var(--map-ink); border-radius: 50%; font-size: 13px; line-height: 1; }
 .km-mark span { display: grid; place-items: center; width: 26px; height: 26px; transform: translate(-50%, -50%); background: var(--map-paper); color: var(--map-ink); border: 2px solid var(--map-ink); border-radius: 50%; font: 700 10px/1 var(--mono); }
 .place-label span, .water-label span { display: block; white-space: nowrap; }
 .place-label span { font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--map-ink); text-shadow: 0 0 2px var(--map-paper), 0 0 5px var(--map-paper); }

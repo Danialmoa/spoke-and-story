@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx
 from dotenv import load_dotenv
@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 
-from . import agent, openmeteo, photon, planner, story, tracing, usage
+from . import agent, limits, openmeteo, ors, photon, planner, route_stats, spots, story, tracing, usage
 from .planner import PlanRequest
 
 load_dotenv()
@@ -21,7 +21,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("google_genai").setLevel(logging.WARNING)
 
 app = FastAPI(title="Spoke & Story")
+limits.install(app)
 WEB = Path(__file__).parent.parent / "web"
+Bike = Literal["road", "gravel", "mtb"]
+Text = Annotated[str, Field(max_length=1500)]
 
 
 class Message(BaseModel):
@@ -52,6 +55,40 @@ class Event(BaseModel):
     area: str | None = Field(None, pattern=r"^-?\d{1,2}\.\d,-?\d{1,3}\.\d$")
     mode: Literal["gps", "sim"] | None = None
     km: float | None = None
+
+
+class LiveContext(BaseModel):
+    place: Text | None = None
+    beat: Text | None = None
+    base: Text | None = None
+    thread: Text | None = None
+    reason: Literal["top_speed", "grind"] | None = None
+    speed_kmh: float | None = None
+    top_speed_kmh: float | None = None
+    km_done: float | None = None
+    km_left: float | None = None
+    grade_pct: float | None = None
+    climb_done_m: float | None = None
+    local_time: str | None = Field(None, pattern=r"^\d{1,2}:\d{2}$")
+    said: list[Text] = Field([], max_length=3)
+
+
+class LiveRequest(BaseModel):
+    event: Literal["chapter", "speed", "spot", "reroute"]
+    bike: Bike = "road"
+    context: LiveContext = LiveContext()
+
+
+class SpotsRequest(BaseModel):
+    coords: list[Annotated[list[float], Field(min_length=2, max_length=3)]] = Field(min_length=2)
+
+
+class RerouteRequest(BaseModel):
+    """points: the current position, points on the rest of the planned route, the end."""
+
+    points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=2, max_length=25)
+    bike: Bike = "road"
+    priority: Literal["scenic", "flat", "fast"] = "scenic"
 
 
 @app.exception_handler(ValueError)
@@ -109,6 +146,23 @@ def pick(body: PickRequest):
 def ride_story(body: StoryRequest):
     usage.track("story")
     return story.build(body.request, body.route)
+
+
+@app.post("/api/live")
+def live(body: LiveRequest):
+    usage.track("live", kind=body.event)
+    return {"text": agent.live_line(body.event, body.bike, body.context.model_dump())}
+
+
+@app.post("/api/spots")
+def fun_spots(body: SpotsRequest):
+    return {"spots": spots.along(body.coords)}
+
+
+@app.post("/api/reroute")
+def reroute(body: RerouteRequest):
+    """No scenery here: Overpass is too slow for a rider waiting off route."""
+    return {**route_stats.summarize(ors.through(body.points, body.bike, body.priority)), "id": "R"}
 
 
 @app.post("/api/event")

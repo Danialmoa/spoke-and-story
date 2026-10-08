@@ -64,6 +64,8 @@ def places_along(coords: list, articles: list[dict]) -> list[dict]:
         passed_at = line.project(point)
         found[a["title"]] = {
             "name": a["title"],
+            "lat": a["lat"],
+            "lon": a["lon"],
             "index": int(min(np.searchsorted(along_m, passed_at), len(coords) - 1)),
             "along_m": passed_at,
             "off_m": off_m,
@@ -114,13 +116,23 @@ def build(req, route: dict) -> dict:
         "bike": req.bike,
     }
     script = agent.ride_story(ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)])
+    beats = script.get("beats", [])
+    # lat/lon: after a reroute the page pins the stories to the new route.
     return {
         "intro": script.get("intro", ""),
         "finish": script.get("finish", ""),
+        "thread": script.get("thread", ""),
         "turn_lines": [t for t in script.get("turn_lines", []) if t.count("{turn}") == 1],
         "stories": [
-            {"index": p["index"], "place": p["name"], "text": text}
-            for p, text in zip(places, script["stories"])
+            {
+                "index": p["index"],
+                "place": p["name"],
+                "text": text,
+                "beat": beats[i] if i < len(beats) else "",
+                "lat": p["lat"],
+                "lon": p["lon"],
+            }
+            for i, (p, text) in enumerate(zip(places, script["stories"]))
             if text
         ],
     }

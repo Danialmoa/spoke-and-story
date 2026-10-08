@@ -68,6 +68,11 @@ def loops(lat: float, lon: float, length_km: float, bike: str, priority: str) ->
     return features
 
 
+def through(points: list[list[float]], bike: str, priority: str) -> dict:
+    """One route through [lat, lon] points, in order."""
+    return _directions(bike, priority, {"coordinates": [[p[1], p[0]] for p in points]})[0]
+
+
 def a_to_b(start: tuple[float, float], end: tuple[float, float], bike: str, priority: str) -> list[dict]:
     body = {"coordinates": [[start[1], start[0]], [end[1], end[0]]]}
     if straight_km(start, end) < ALTERNATIVES_MAX_KM:

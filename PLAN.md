@@ -6,7 +6,7 @@ Bike route planner with a funny storytelling ride guide. Built for the **DEV Hac
 - **Deadline: Sunday 11 Oct 2026.** Winners the week of 12 Oct.
 - Submit one DEV post with tags `#devchallenge #hf26challenge` and the submission template. Writing quality counts most.
 - Bonus points for taking it outside and telling how it went.
-- Last updated: 8 Oct 2026, night. Live guide and launch prep in progress (3 agents). Nothing pushed yet (no GitHub remote).
+- Last updated: 9 Oct 2026, early morning. Live guide built, launch prep done. Nothing pushed yet (no remote).
 
 ## Where we are
 
@@ -84,50 +84,64 @@ See `.env.example`.
 
 ## Next steps
 
-### 1. Live guide (in progress since 8 Oct night, two agents: backend + page)
+### 1. Live guide (built 8-9 Oct night)
 
-Gemma now answers in ~2 s, so the guide can react **while riding**:
+Gemma answers in ~2-3 s, so the guide reacts **while riding** (`/api/live`, `/api/spots`, `/api/reroute`,
+`app/spots.py`, `web/js/live.js`):
 
-- [ ] **Chapters written live:** plan only the outline at the start (~3 s). Write each chapter shortly before the place,
-      with live context (speed, the last climb, time of day, what was already said), so it never repeats.
-- [ ] **Speed reactions:** above ~35 km/h downhill, a new top speed, or grinding a climb under 8 km/h. At most one
-      comment every ~2 min.
-- [ ] **Off route → reroute:** after ~15 s off route, plan a new route from the current position (ORS directions), swap
-      it in, and say something fresh ("Plot twist, scenic detour…").
-- [ ] **Fun places passed:** at ride start, find old restaurants, cafés, bars, pubs, gelato and historic spots near the
-      route (OSM: amenity + `start_date` / `historic` / wikipedia tags). As the rider approaches one, write a short fun
-      line about it.
-- Timing: the text takes ~2 s but Santa's audio takes 5-15 s, so start each line ~20-40 s before the place
-  (~150-250 m at riding speed).
-- Build: a `POST /api/live` endpoint (event type + live context → a short line), a reroute endpoint, and
-  `web/js/live.js`, which watches the ride and triggers events. Test it in Simulate and live.
+- [x] **Chapters written live:** each chapter is rewritten just before the place with live context (speed, climb, time,
+      the last lines said). The live version plays only if Santa's audio is ready; else the pre-written one. Never both.
+- [x] **Speed reactions:** new top speed ≥ 35 km/h, or grinding under 9 km/h on ≥ 6%. At most one every 2 min.
+- [x] **Off route → reroute (GPS):** after 15 s off route, a new route through the rest of the planned one, swapped in
+      with a "plot twist" line. Stories and spots are re-pinned to it.
+- [x] **Fun spots:** named restaurants, cafés, bars, pubs, gelato and beer gardens within 60 m of the route (OSM,
+      chains skipped, old/historic ones first), shown as pins, with a short line as you pass.
+- Tested in headless Chrome, with mocks and the real backend (Lecco → Varenna): 5 spots with lines, speed and grind
+  comments, reroute with real ORS in 0.3 s.
+- **Santa is the bottleneck:** Kokoro makes ~2 words/s here, so a 70-90 word live chapter takes ~30-35 s. In Simulate
+  the live chapter won at 2 of 5 places (the rider crawls up to 30 s waiting for it). In GPS (asked ~60 s ahead) it
+  should usually win.
+- [ ] Idea to make Santa ~2x faster in Chrome: send `Cross-Origin-Opener-Policy: same-origin` and
+      `Cross-Origin-Embedder-Policy: credentialless` (lets Kokoro use more threads). Safari ignores it. Needs a test
+      of maps, fonts and the voice on a phone first. Shorter live chapters (~40 words) would also help.
+- Few OSM cafés/bars are tagged as old or historic, so spot lines lean on the kind of place and its food.
 
 ### 2. Launch plan (Friday)
 
 The deployed HTTPS URL is needed for Saturday too: phones only give GPS to `https://` pages.
 
-**Prep (launch agent, running since 8 Oct night, local only, nothing pushed or bought):**
-- [ ] Secrets scan of the files and the whole git history. Also list the commit author emails, since a public repo shows them.
-- [ ] MIT `LICENSE` and a "Credits and licenses" section: Gemma, Kokoro, OSM (ODbL), Wikipedia, Photon, ORS, Leaflet.
-- [ ] Public README: what it is, how it works, run locally, deploy, privacy, voice model download size.
-- [ ] Rate limit on the expensive endpoints (`app/limits.py`) so a bot can't burn the Backboard credit or the ORS quota.
-- [ ] Deploy check: fresh Python 3.12 install, tests, and the app started with Render's start command.
-- [ ] Step-by-step launch checklist (below gets filled from it).
+**Prep (done 8 Oct night, local only):**
+- [x] Secrets scan of the files and the whole git history: no keys anywhere, `.env` never committed.
+- [x] Commits rewritten to the personal no-reply email (`69473288+Danialmoa@users.noreply.github.com`); this repo
+      has it as its local `user.email`. The global git config stays on the work email.
+- [x] MIT `LICENSE`, public README with "Credits and licenses" (Gemma 4 is Apache 2.0). Voice download ~115 MB.
+- [x] Rate limit: 30 calls/min per visitor on the expensive endpoints (`app/limits.py`), wired in `main.py`.
+- [x] Deploy check: fresh Python 3.12 install, tests, and Render's start command all fine.
 
 **Launch (needs Danial, about 30-45 min):**
-- [ ] GitHub: create a public repo `spoke-and-story` on the personal account and push.
-- [ ] Render: New → Blueprint → pick the repo → paste the env vars (`ORS_API_KEY`, `GEMINI_API_KEY`,
-      `BACKBOARD_API_KEY`, `SENTRY_DSN`). Starter plan is paid from the $50 credit.
-- [ ] Sentry (recommended, ~10 min): free personal account → Python/FastAPI project → DSN into `.env` and Render.
-      The code is already there. It's a $100 prize category, and a trace of "story = outline + chapters in parallel"
-      is a nice picture for the post.
-- [ ] Domain (optional): `spoke-story.tech` or `spoke-and-story.com` (both free on 8 Oct). Without one,
-      `spoke-and-story.onrender.com` works fine.
-- [ ] Smoke test on the live URL: search, routes, pick, Simulate with Santa, the live guide, `/api/stats`.
+- [ ] GitHub, **private for now** (make it public before the DEV post): gh has `Danialmoa` active with HTTPS (the
+      Mac's SSH key belongs to the work account, so don't use an SSH remote):
+      `gh repo create Danialmoa/spoke-and-story --private --source=. --remote=origin` then
+      `git remote set-url origin https://github.com/Danialmoa/spoke-and-story.git` and `git push -u origin main`.
+- [ ] Decide first: `region: frankfurt` in `render.yaml` (closer to Italy and to ORS/Photon/Overpass; default is
+      Oregon; can't be changed later).
+- [ ] Render: New → Blueprint → give Render's GitHub app access to the private repo → paste `ORS_API_KEY`,
+      `GEMINI_API_KEY`, `BACKBOARD_API_KEY`, `SENTRY_DSN`. Starter plan is paid from the $50 credit. Every push to
+      `main` redeploys, so don't push during the Saturday ride.
+- [ ] Sentry (recommended, ~10 min): free personal account → FastAPI project → DSN into `.env` and Render.
+      Screenshots for the post: `/api/story` trace (outline, then chapters in parallel), `/api/plan` (Photon → ORS →
+      Overpass), the AI/LLM view (Gemma tokens and latency), `/api/live`.
+- [ ] Domain (optional): `spoke-story.tech` or `spoke-and-story.com` (both free on 8 Oct). On Render: Custom Domains →
+      add it; at the registrar `ALIAS @ → <service>.onrender.com` (or `A @ 216.24.57.1`) and `CNAME www → <service>.onrender.com`.
+- [ ] Smoke test on the live URL: health, search, routes, pick, Ride buddy, Simulate with Santa and the live guide,
+      `/api/stats`, no URLs in the Render logs. Rate limit: 31 quick POSTs to `/api/plan` → the 31st is 429; then one
+      with a fake `X-Forwarded-For` should still be 429 (if not, read the right-most entry in `limits.py`).
 - [ ] Clean-up: delete the 5 leftover Backboard "Default Assistant"s. Rename the folder if wanted.
 
 ### 3. Ride and record (Saturday)
 
+- [ ] At home on Wi-Fi: open the https URL on the phone, allow location, run one Simulate so the ~115 MB voice
+      downloads and caches.
 - [ ] Ride a real route with the app (Start ride, GPS) and note what was fun or broken. This counts for the bonus.
 - [ ] Record the demo video: search, routes, Simulate with Santa's story.
 

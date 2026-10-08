@@ -1,4 +1,8 @@
-const ride = { route: null, kms: null, steps: [], climbLeft: null, idx: 0, km: 0, offRoute: false, lastFix: null, rider: null, watch: null, timer: null, wake: null, spoken: new Set(), voice: true, story: null, mode: 'gps' };
+// km is along the current route; kmBase and climbBase hold what was ridden before a reroute.
+const ride = {
+  route: null, planned: null, kms: null, steps: [], climbLeft: null, idx: 0, km: 0, kmBase: 0, climbBase: 0, speed: 0, offRoute: false,
+  lastFix: null, rider: null, watch: null, timer: null, wake: null, spoken: new Set(), said: [], voice: true, story: null, spots: [], stops: [], mode: 'gps',
+};
 const TURN = { 0: '↰', 1: '↱', 2: '↰', 3: '↱', 4: '↖', 5: '↗', 6: '↑', 7: '⟳', 8: '⟳', 9: '↶', 10: '⚑', 11: '↑', 12: '↖', 13: '↗' };
 const OFF_ROUTE_KM = 0.06;
 const SIM_KM_PER_TICK = 0.06;
@@ -62,6 +66,7 @@ function pointAt(km) {
 }
 
 function ensureStory(route) {
+  ensureSpots(route);
   if (!stories.has(route)) {
     const story = api.story(state.req || readForm(), route).catch(() => null);
     stories.set(route, story);
@@ -108,20 +113,13 @@ function narrate(next, done, left) {
   }
   if (next) {
     const toNext = kms[next.index] - done;
-    if (toNext <= 1) prepare(turnLine(next));
+    if (toNext <= 1) prepare(turnLine(next), { first: true });
     if (toNext <= 0.2 && !ride.spoken.has(next.index)) {
       ride.spoken.add(next.index);
       say(turnLine(next), { urgent: true, until: kms[next.index] + 0.03 });
     }
   }
-  for (const story of ride.story?.stories || []) {
-    const at = kms[Math.min(story.index, kms.length - 1)];
-    if (done >= at - 2 && done < at) prepare(story.text);
-    if (done >= at - 0.3 && !ride.spoken.has(`story-${story.index}`)) {
-      ride.spoken.add(`story-${story.index}`);
-      say(story.text, { title: story.place, until: at + 1.5 });
-    }
-  }
+  narrateStops(done);
 }
 
 // Santa takes seconds per line, so the whole ride's lines are made in the background, in route order, as soon as
@@ -153,7 +151,7 @@ function renderRide(speedKmh) {
   const left = Math.max(0, total - done);
   const next = ride.steps.find((s) => s.index > idx);
   if (left < 0.05) {
-    setTurn('⚑', 'Done', `${total.toFixed(1)} km and ${route.climb_m} m of climbing. Now go touch some grass.`, 'done');
+    setTurn('⚑', 'Done', `${(ride.kmBase + total).toFixed(1)} km and ${Math.round(ride.climbBase + route.climb_m)} m of climbing. Now go touch some grass.`, 'done');
   } else if (ride.offRoute) {
     setTurn('!', 'Off route', 'Head back to the dashed line.', 'off');
   } else if (next) {
@@ -163,7 +161,7 @@ function renderRide(speedKmh) {
   }
   if (!ride.offRoute) narrate(next, done, left);
   $('#r-speed').textContent = speedKmh.toFixed(1);
-  $('#r-done').textContent = done.toFixed(1);
+  $('#r-done').textContent = (ride.kmBase + done).toFixed(1);
   $('#r-left').textContent = left.toFixed(1);
   $('#r-climb').textContent = Math.round(ride.climbLeft[idx]);
   $('#r-grade').textContent = String(Math.round(gradeAt(idx)) || 0);
@@ -187,10 +185,12 @@ function onPosition({ lat, lon, speedKmh = null, heading = null, accuracyM = 0 }
   }
   if (heading == null) heading = last && haversineKm(last.pos, pos) > 0.005 ? bearing(last.pos, pos) : last?.heading ?? 0;
   ride.lastFix = { pos, t: now, heading };
+  ride.speed = speedKmh || 0;
   ride.rider.setLatLng(pos);
   ride.rider.getElement()?.style.setProperty('--h', `${heading}deg`);
   map.m.panTo(pos, { animate: true, duration: 0.35 });
-  renderRide(speedKmh || 0);
+  renderRide(ride.speed);
+  watchLive(pos);
 }
 
 function simulateRide() {
@@ -205,7 +205,7 @@ function simulateRide() {
       if (!voice.busy) showSubtitle({ ...WAITING, text: `${WAITING.text} Starting in ${Math.ceil((STORY_WAIT_MS - waited) / 1000)}s.` });
       return;
     }
-    km = Math.min(total, km + (voice.busy ? SIM_KM_TALKING : SIM_KM_PER_TICK));
+    km = Math.min(total, km + (voice.busy || liveWaiting() ? SIM_KM_TALKING : SIM_KM_PER_TICK));
     const speedKmh = Math.max(8, Math.min(45, 26 - gradeAt(nearestIndex(ride.kms, km)) * 2.2));
     onPosition({ ...pointAt(km), speedKmh });
     if (km >= total) clearInterval(ride.timer);
@@ -217,10 +217,11 @@ async function startRide(simulate) {
   if (!route || !map.m) return;
   unlockAudio();
   Object.assign(ride, {
-    route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
-    idx: 0, km: 0, offRoute: false, lastFix: null, spoken: new Set(), story: null, mode: simulate ? 'sim' : 'gps',
-    storyWait: true,
+    route, planned: route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
+    idx: 0, km: 0, kmBase: 0, climbBase: 0, speed: 0, offRoute: false, lastFix: null, spoken: new Set(), said: [], story: null,
+    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true,
   });
+  resetLive();
   $('#ride').hidden = false;
   document.body.classList.add('riding');
   $('#ride-frame').className = `${$('#map-frame').className} ride-frame`;
@@ -234,17 +235,23 @@ async function startRide(simulate) {
   loadVoice();
   showSubtitle(WAITING);
   setTimeout(() => {
-    if (ride.route !== route || !ride.storyWait) return;
+    if (ride.planned !== route || !ride.storyWait) return;
     ride.storyWait = false;
     if (!voice.busy) showSubtitle(null);
   }, STORY_WAIT_MS);
   ensureStory(route).then((story) => {
-    if (ride.route !== route || $('#ride').hidden) return;
+    if (ride.planned !== route || $('#ride').hidden) return;
     ride.story = story;
     ride.storyWait = false;
+    setStops();
     prepareRide(route, story, ride.km);
     if (!voice.busy) showSubtitle(null);
     if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
+  });
+  ensureSpots(route).then((spots) => {
+    if (ride.planned !== route || $('#ride').hidden) return;
+    ride.spots = spots;
+    setStops();
   });
   api.event({ event: 'ride_start', mode: ride.mode, km: route.distance_km, area: areaOf(route.coords[0]) });
   renderRide(0);
@@ -280,6 +287,8 @@ function endRide() {
   ride.wake = null;
   stopVoice();
   if (ride.rider) map.m.removeLayer(ride.rider);
+  drawSpots([]);
+  drawRoutes();
   $('#map-frame').prepend($('#map'));
   $('#ride').hidden = true;
   document.body.classList.remove('riding');
