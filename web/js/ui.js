@@ -203,12 +203,6 @@ function setLoading(on, text = 'Scouting routes…') {
 }
 
 function renderMode() {
-  const el = $('#mode');
-  el.textContent = state.live ? 'Live' : 'Sample data';
-  el.classList.toggle('is-live', state.live);
-  el.title = state.live
-    ? 'Connected to the Spoke & Story API.'
-    : 'The API is not running, so the page shows built-in sample routes around Lecco.';
   $('#sample-note').hidden = state.live;
 }
 

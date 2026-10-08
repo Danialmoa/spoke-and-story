@@ -55,6 +55,7 @@ async function sendChat(raw) {
     fillForm(res.request || {});
     showResult(res.result);
     setSearched(true);
+    ensureStory(currentRoute());
     state.thread.push({ role: 'thinking' });
     renderThread();
     const picked = await pickBest(res.request, res.result);

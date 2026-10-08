@@ -73,8 +73,23 @@ function turnLine(step) {
   return lines[ride.steps.indexOf(step) % lines.length].replace('{turn}', turn);
 }
 
-// Depart and arrive steps are covered by the intro and the finish line.
-const SILENT_STEPS = new Set([10, 11]);
+// Only real direction changes are announced and shown: "continue straight", "slight left", "keep right" and
+// roundabouts ridden straight through were constant chatter in towns. The heading is compared 60 m before and
+// after the maneuver because ORS calls a straight-through roundabout exit a turn.
+const KEY_TURNS = new Set([0, 1, 2, 3, 7, 9]);
+const MIN_TURN_DEG = 35;
+
+function turnAngle(coords, kms, index) {
+  const before = coords[nearestIndex(kms, kms[index] - 0.06)];
+  const after = coords[nearestIndex(kms, kms[index] + 0.06)];
+  const at = coords[index];
+  return Math.abs(((bearing(at, after) - bearing(before, at) + 540) % 360) - 180);
+}
+
+function keyTurns(route, kms) {
+  return (route.steps || []).filter((s) => KEY_TURNS.has(s.type) && turnAngle(route.coords, kms, s.index) >= MIN_TURN_DEG);
+}
+const WAITING = { title: 'Getting ready', text: 'Your guide is writing the stories for this route. Give it a few seconds…' };
 
 function narrate(next, done, left) {
   const { kms } = ride;
@@ -86,7 +101,7 @@ function narrate(next, done, left) {
     }
     return;
   }
-  if (next && !SILENT_STEPS.has(next.type)) {
+  if (next) {
     const toNext = kms[next.index] - done;
     if (toNext <= 1) prepare(turnLine(next));
     if (toNext <= 0.2 && !ride.spoken.has(next.index)) {
@@ -124,6 +139,8 @@ function renderRide(speedKmh) {
     setTurn('!', 'Off route', 'Head back to the dashed line.', 'off');
   } else if (next) {
     setTurn(TURN[next.type] || '↑', fmtDist(kms[next.index] - done), next.text);
+  } else {
+    setTurn('⚑', fmtDist(left), 'No more turns. Straight on to the finish.');
   }
   if (!ride.offRoute) narrate(next, done, left);
   $('#r-speed').textContent = speedKmh.toFixed(1);
@@ -160,7 +177,10 @@ function onPosition({ lat, lon, speedKmh = null, heading = null, accuracyM = 0 }
 function simulateRide() {
   const total = ride.kms[ride.kms.length - 1];
   let km = 0;
+  const started = Date.now();
   ride.timer = setInterval(() => {
+    // Wait at the start while the story is being written (max 60 s), or the intro and first stories get skipped.
+    if (ride.storyWait && Date.now() - started < 60000) return;
     km = Math.min(total, km + (voice.busy ? SIM_KM_TALKING : SIM_KM_PER_TICK));
     const speedKmh = Math.max(8, Math.min(45, 26 - gradeAt(nearestIndex(ride.kms, km)) * 2.2));
     onPosition({ ...pointAt(km), speedKmh });
@@ -173,8 +193,9 @@ async function startRide(simulate) {
   if (!route || !map.m) return;
   unlockAudio();
   Object.assign(ride, {
-    route, kms: routeKm(route), steps: route.steps || [], climbLeft: climbLeftFrom(route.coords),
+    route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
     idx: 0, km: 0, offRoute: false, lastFix: null, spoken: new Set(), story: null, mode: simulate ? 'sim' : 'gps',
+    storyWait: true,
   });
   $('#ride').hidden = false;
   document.body.classList.add('riding');
@@ -187,10 +208,16 @@ async function startRide(simulate) {
   map.m.setView(route.coords[0], 16, { animate: false });
   $('#ride-mode').textContent = simulate ? 'Simulation · fast-forward' : 'GPS';
   loadVoice();
+  showSubtitle(WAITING);
+  setTimeout(() => {
+    if (ride.route === route) ride.storyWait = false;
+  }, 60000);
   ensureStory(route).then((story) => {
     if (ride.route !== route || $('#ride').hidden) return;
     ride.story = story;
-    if (story?.intro && ride.km < 0.5) say(story.intro, { title: 'Your ride' });
+    ride.storyWait = false;
+    if (!voice.busy) showSubtitle(null);
+    if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
   });
   api.event({ event: 'ride_start', mode: ride.mode, km: route.distance_km, area: areaOf(route.coords[0]) });
   renderRide(0);

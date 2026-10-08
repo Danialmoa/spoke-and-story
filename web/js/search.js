@@ -21,6 +21,7 @@ async function planFromForm() {
   showResult(res);
   if (state.result !== res) return;
   setSearched(true);
+  ensureStory(currentRoute());
   pickBest(req, res);
 }
 

@@ -1,24 +1,28 @@
 function wireLogo() {
   const bike = $('#logo-bike');
-  const pill = $('#mode');
+  const stone = $('#stone');
   bike.addEventListener('click', async () => {
     if (bike.classList.contains('riding')) return;
     const b = bike.getBoundingClientRect();
-    const p = pill.getBoundingClientRect();
-    const takeoff = p.left - b.right + 6;
+    const s = stone.getBoundingClientRect();
+    // The front tyre ends at 87% of the bike's width and the rear tyre starts at 11%.
+    const liftoff = s.left - 20 - (b.left + b.width * 0.87);
+    const landing = s.right + 20 - (b.left + b.width * 0.11);
     const away = window.innerWidth - b.left;
-    const rise = Math.max(30, b.bottom - p.top + 10);
+    const hang = 450;
     // fill: 'forwards' keeps the bike in place between stages instead of flashing back home for a frame.
-    const ride = (frames, opts) => bike.animate(frames, { fill: 'forwards', ...opts }).finished;
+    const roll = (from, to, duration, easing) =>
+      bike.animate([{ translate: `${from}px 0` }, { translate: `${to}px 0` }], { duration, easing, fill: 'forwards' }).finished;
     bike.classList.add('riding');
-    await ride([{ transform: 'none' }, { transform: `translateX(${takeoff}px)` }], { duration: takeoff * 2, easing: 'ease-in' });
-    pill.animate([{ transform: 'none' }, { transform: 'translateY(3px) rotate(-6deg)' }, { transform: 'none' }], { duration: 350, easing: 'ease-out' });
-    await ride([
-      { transform: `translateX(${takeoff}px)` },
-      { transform: `translate(${takeoff + (away - takeoff) * 0.3}px, ${-rise * 0.6}px) rotate(-20deg)` },
-      { transform: `translate(${away}px, ${-rise}px) rotate(-10deg)` },
-    ], { duration: 700, easing: 'ease-out' });
-    await ride([{ transform: `translateX(${-b.right}px)` }, { transform: 'none' }], { duration: Math.max(700, b.right * 4), easing: 'ease-out' });
+    await roll(0, liftoff, liftoff * 2, 'ease-in');
+    bike.animate([
+      { transform: 'none', easing: 'ease-out' },
+      { transform: `translateY(${-(s.height + 6)}px) rotate(-4deg)`, easing: 'ease-in' },
+      { transform: 'none' },
+    ], { duration: hang });
+    await roll(liftoff, landing, hang, 'linear');
+    await roll(landing, away, (away - landing) / 0.8, 'linear');
+    await roll(-b.right, 0, Math.max(700, b.right * 4), 'ease-out');
     bike.classList.remove('riding');
   });
 }

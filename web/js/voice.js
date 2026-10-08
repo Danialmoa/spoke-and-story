@@ -121,10 +121,10 @@ async function drainVoice() {
   while (voice.queue.length) {
     const item = voice.queue.shift();
     if (item.until != null && ride.km > item.until) continue;
-    showSubtitle(item.title ? item : null);
+    showSubtitle(item.title ? item : idleSubtitle());
     await speakOne(item);
   }
-  showSubtitle(null);
+  showSubtitle(idleSubtitle());
   voice.busy = false;
 }
 
@@ -172,6 +172,10 @@ function stopVoice() {
   window.speechSynthesis?.cancel();
   voice.stop?.();
   showSubtitle(null);
+}
+
+function idleSubtitle() {
+  return ride.storyWait ? WAITING : null;
 }
 
 function showSubtitle(item) {

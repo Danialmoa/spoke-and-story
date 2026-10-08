@@ -76,19 +76,20 @@ button, input { font: inherit; color: inherit; }
 
 /* Header */
 .top { background: var(--header); color: var(--header-ink); overflow-x: clip; }
-.top-inner { max-width: 1240px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+.top-inner { --logo-h: clamp(46px, 6.4vw, 66px); max-width: 1240px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .wordmark { font: 800 clamp(38px, 6vw, 60px)/.85 var(--display); letter-spacing: .02em; }
 .logo-bike { position: relative; z-index: 1; padding: 0; border: 0; background: none; cursor: pointer; transform-origin: 28% 74%; }
-.logo-bike svg { display: block; height: clamp(46px, 6.4vw, 66px); }
+.logo-bike svg { display: block; height: var(--logo-h); }
 .logo-bike .f2, .logo-bike .k1, .logo-bike .k2 { opacity: 0; }
 .logo-bike.riding svg { animation: bike-bump .24s infinite; }
 .logo-bike.riding :is(.f1, .k1) { animation: bike-frame .2s infinite; }
 .logo-bike.riding :is(.f2, .k2) { animation: bike-frame .2s -.1s infinite; }
 @keyframes bike-frame { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 @keyframes bike-bump { 0%, 49% { transform: none; } 50%, 100% { transform: translateY(-2px); } }
-.mode { margin-left: auto; font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; padding: 8px 10px; border: 2px solid var(--line); background: var(--card); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow); cursor: help; }
-.mode.is-live { background: var(--lcd-bg); color: var(--lcd-ink); }
+.stone { margin-left: auto; align-self: flex-end; }
+/* Stone and bike art share a pixel size: the bike is 29 pixels tall, the stone 6. */
+.stone svg { display: block; height: calc(var(--logo-h) * 6 / 29); }
 .road { height: 14px; border-top: 3px solid var(--line); border-bottom: 3px solid var(--line); background: repeating-linear-gradient(90deg, var(--road-dash) 0 26px, transparent 26px 50px) center / 100% 2px no-repeat, var(--road); }
 
 /* Page */

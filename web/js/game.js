@@ -2,15 +2,49 @@
   // Everything is drawn in a 130px-tall logical space and scaled to the canvas, so physics feel the same at any size.
   const HEIGHT = 130;
   const GROUND = HEIGHT - 22;
-  const R = 9;
-  const BASE = 30;
+  // The bike is the header logo's pixel art: 38x29 pixels, rear axle at (10.5, 21.5), wheels 16 apart with radius 6.4.
+  const PX = 1.75;
+  const R = 6.4 * PX;
+  const BASE = 16 * PX;
   const BIKE_X = 44;
   const GRAVITY = 2300;
   const JUMP = 480;
   const PX_PER_M = 20;
   const FONT = '600 12px "IBM Plex Mono", monospace';
+  // Stones in the bike's pixel size: small (comes in pairs), medium, and big with moss. K is the outline.
+  const STONES = [
+    [
+      '..KKKK..',
+      '.KssSSK.',
+      'KsSSSSdK',
+      'KSSSSddK',
+      'KKKKKKKK',
+    ],
+    [
+      '....KKKK....',
+      '..KKssSSKK..',
+      '.KssSSSSSdK.',
+      'KsSSSSSSSSdK',
+      'KSSSSdSSSddK',
+      'KSSSSSSSdddK',
+      'KKKKKKKKKKKK',
+    ],
+    [
+      '......L.g.....',
+      '.....gFgFg....',
+      '....KFgFgFKK..',
+      '...KssSSSSSSK.',
+      '..KsSSSSSSSSdK',
+      '.KsSSSSSSdSSdK',
+      'KsSSSSSSSdSddK',
+      'KSSSSSSSSSSddK',
+      'KSSdSSSSSSdddK',
+      'KKKKKKKKKKKKKK',
+    ],
+  ];
+  const STONE_COLORS = { S: '#8E9893', s: '#C3CBC6', d: '#66706B', F: '#5F7F45', g: '#97B87A', L: '#D4ECB4' };
 
-  let canvas, ctx, colors, s;
+  let canvas, ctx, colors, s, bikeFrames, stoneArt;
   let raf = 0;
   let last = 0;
   let W = 0;
@@ -19,30 +53,28 @@
   const cssVar = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 
   function reset() {
-    s = { dist: 0, speed: 260, y: 0, vy: 0, stones: [], gap: W * 0.7, crashed: false, tapped: false, time: 0 };
+    s = { dist: 0, speed: 260, y: 0, vy: 0, stones: [], gap: W * 0.7, crashed: false, started: false };
   }
 
   function addStones() {
     const pair = Math.random() < 0.25;
     let x = W + 10;
     for (let i = 0; i < (pair ? 2 : 1); i++) {
-      const h = pair ? 8 + Math.random() * 4 : 9 + Math.random() * 9;
-      const w = h * 1.4 + Math.random() * (pair ? 4 : 6);
-      s.stones.push({ x, w, h });
-      x += w - 2;
+      const art = stoneArt[pair ? 0 : 1 + Math.floor(Math.random() * 2)];
+      s.stones.push({ x, art, w: art.width * PX, h: art.height * PX });
+      x += art.width * PX - 2;
     }
     // Always leaves room to land and jump again: a jump covers about 0.42 s of travel.
     s.gap = s.speed * (0.75 + Math.random() * 0.9) + 90;
   }
 
   function jump() {
-    if (s.crashed) return reset();
-    s.tapped = true;
+    if (s.crashed) reset();
+    s.started = true;
     if (s.y === 0) s.vy = JUMP;
   }
 
   function update(dt) {
-    s.time += dt;
     s.speed = Math.min(620, s.speed + 9 * dt);
     const move = s.speed * dt;
     s.dist += move;
@@ -66,39 +98,38 @@
     ctx.stroke();
   }
 
+  // Images from the logo SVG: standing still, then two riding frames. Outlines take the game's ink so they show on the dark map too.
+  function loadBikeFrames() {
+    return [['f1'], ['f1', 'k1'], ['f2', 'k2']].map((keep) => {
+      const svg = document.querySelector('#logo-bike svg').cloneNode(true);
+      svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      svg.setAttribute('width', '38');
+      svg.setAttribute('height', '29');
+      svg.querySelectorAll('g[class]').forEach((g) => keep.includes(g.getAttribute('class')) || g.remove());
+      const img = new Image();
+      img.src = `data:image/svg+xml,${encodeURIComponent(svg.outerHTML.replaceAll('#17241F', colors.ink))}`;
+      return img;
+    });
+  }
+
+  function loadStoneArt() {
+    return STONES.map((rows) => {
+      const art = document.createElement('canvas');
+      art.width = rows[0].length;
+      art.height = rows.length;
+      const g = art.getContext('2d');
+      rows.forEach((row, y) => [...row].forEach((ch, x) => {
+        if (ch === '.') return;
+        g.fillStyle = ch === 'K' ? colors.ink : STONE_COLORS[ch];
+        g.fillRect(x, y, 1, 1);
+      }));
+      return art;
+    });
+  }
+
   function drawBiker() {
-    const wy = GROUND - R - s.y;
-    const rx = BIKE_X;
-    const fx = BIKE_X + BASE;
-    const angle = s.dist / R;
-    for (const hx of [rx, fx]) {
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = colors.ink;
-      ctx.beginPath();
-      ctx.arc(hx, wy, R, 0, Math.PI * 2);
-      ctx.stroke();
-      for (let k = 0; k < 2; k++) {
-        const a = angle + (k * Math.PI) / 2;
-        path([[hx - Math.cos(a) * R, wy - Math.sin(a) * R], [hx + Math.cos(a) * R, wy + Math.sin(a) * R]], 1.2);
-      }
-    }
-    const bb = [rx + 13, wy + 1];
-    const seat = [rx + 9, wy - 15];
-    const head = [fx - 5, wy - 13];
-    const bar = [fx - 3, wy - 18];
-    path([[rx, wy], bb, seat, [rx, wy]]);
-    path([seat, head, bb]);
-    path([bar, head, [fx, wy]]);
-    const hip = [seat[0] + 1, seat[1] - 2];
-    const shoulder = [rx + 23, wy - 30];
-    const pedal = [bb[0] + Math.cos(angle) * 5, bb[1] + Math.sin(angle) * 5];
-    path([hip, [rx + 20, wy - 8], pedal]);
-    path([shoulder, bar], 2.2);
-    path([hip, shoulder], 5, colors.accent);
-    ctx.fillStyle = colors.ink;
-    ctx.beginPath();
-    ctx.arc(shoulder[0] + 4, shoulder[1] - 6, 4.5, 0, Math.PI * 2);
-    ctx.fill();
+    const img = bikeFrames[s.started && !s.crashed ? 1 + (Math.floor(s.dist / 30) % 2) : 0];
+    ctx.drawImage(img, BIKE_X - 10.5 * PX, GROUND - 28 * PX - s.y, 38 * PX, 29 * PX);
   }
 
   function draw() {
@@ -113,18 +144,7 @@
       ctx.lineTo(x + 14, GROUND + 8);
     }
     ctx.stroke();
-    for (const st of s.stones) {
-      ctx.beginPath();
-      ctx.moveTo(st.x, GROUND);
-      ctx.quadraticCurveTo(st.x + st.w * 0.04, GROUND - st.h, st.x + st.w * 0.42, GROUND - st.h);
-      ctx.quadraticCurveTo(st.x + st.w * 0.98, GROUND - st.h * 0.95, st.x + st.w, GROUND);
-      ctx.closePath();
-      ctx.fillStyle = colors.muted;
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = colors.ink;
-      ctx.stroke();
-    }
+    for (const st of s.stones) ctx.drawImage(st.art, st.x, GROUND - st.h, st.w, st.h);
     drawBiker();
     ctx.font = FONT;
     ctx.textBaseline = 'top';
@@ -136,15 +156,21 @@
       ctx.fillText(`best ${best} m`, W - 10, 24);
     }
     ctx.textAlign = 'center';
-    ctx.fillStyle = s.crashed ? colors.accent : colors.ink;
-    if (s.crashed) ctx.fillText('CRASH! tap to ride again', W / 2, HEIGHT * 0.35);
-    else if (!s.tapped && s.time < 3) ctx.fillText('tap to jump', W / 2, HEIGHT * 0.35);
+    if (s.crashed) {
+      ctx.fillStyle = colors.accent;
+      ctx.fillText('CRASH! tap to ride again', W / 2, HEIGHT * 0.35);
+    } else if (!s.started) {
+      ctx.fillStyle = colors.accent;
+      ctx.fillText('TAP TO PLAY ▶', W / 2, HEIGHT * 0.25);
+      ctx.fillStyle = colors.muted;
+      ctx.fillText('then tap or press space to jump', W / 2, HEIGHT * 0.25 + 18);
+    }
   }
 
   function frame(t) {
     const dt = Math.min(0.05, (t - (last || t)) / 1000);
     last = t;
-    if (!s.crashed) update(dt);
+    if (s.started && !s.crashed) update(dt);
     draw();
     raf = requestAnimationFrame(frame);
   }
@@ -173,8 +199,11 @@
     c.height = Math.round(cssH * dpr);
     ctx = c.getContext('2d');
     ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
+    ctx.imageSmoothingEnabled = false;
     W = cssW / k;
     colors = { ink: cssVar('--map-ink', '#17241F'), accent: cssVar('--route', '#CF4F3B'), muted: cssVar('--muted', '#5B6A64') };
+    bikeFrames = loadBikeFrames();
+    stoneArt = loadStoneArt();
     reset();
     c.addEventListener('pointerdown', onPointer);
     window.addEventListener('keydown', onKey);
