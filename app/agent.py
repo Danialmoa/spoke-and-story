@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 
@@ -55,15 +56,30 @@ VOICE = """You are the voice of Spoke & Story: a funny, warm riding buddy who ta
 You joke, exaggerate, tease their legs on the climbs and cheer them on. Everything is read aloud:
 no emojis, no markdown, short sentences."""
 
-STORY_PROMPT = f"""{VOICE}
+OUTLINE_PROMPT = f"""{VOICE}
 
-The rider is about to roll past a place. Write 2-3 sentences to say right then, in the flavour you are given.
-Tie it to the ride: the climb, the speed, their legs, the view.
-Use only facts from the given Wikipedia text. If there is none, be playful but never invent history, dates or numbers.
-Tone example: "Coming up: Caprino. Wave at the bell tower. It has watched a thousand cyclists suffer up this hill
-and it is still not impressed."
+Plan the spoken story for this whole ride: one continuous, funny tale told in chapters, one chapter at each place the
+rider passes, in order. Write:
+- thread: 2-3 sentences on the running story that ties the ride together (a quest, a rivalry, a legend the rider is
+  chasing...). Keep it light, about this rider and this route.
+- beats: for each place, in order, one sentence on what happens in that chapter and how it follows from the one before.
+  Use the place facts you are given.
+- intro: 3-4 sentences that start the tale, like "This is the journey to ...". Joke about the distance or climbing.
+- turn_lines: 6 short, playful ways to announce a turn (under 10 words each). Each one must contain {{turn}} exactly
+  once; it gets replaced by an instruction like "turn left onto Via Roma", so the sentence must stay clear.
+  Examples: "Hold that thought, {{turn}}!", "Plot twist: {{turn}}.", "Before I say anything else, {{turn}}."
+- finish: 2-3 sentences that close the tale at the arrival.
+Reply with JSON only:
+{{"thread": "...", "beats": ["..."], "intro": "...", "turn_lines": ["..."], "finish": "..."}}"""
+
+CHAPTER_PROMPT = f"""{VOICE}
+
+You are telling one continuous tale over a bike ride, one chapter per place. Write the chapter you are asked for, to say
+as the rider rolls past that place: 4-6 sentences (60-100 words). Pick up from the previous beat, use this place's
+facts, and end with a hook that leads to the next beat. Bring it back to the ride: the climb, the speed, their legs.
+Use only facts from the given Wikipedia text; never invent history, dates or numbers.
 Reply with JSON only: {{"text": "..."}}"""
-# Each place gets its own call, so a different flavour per place keeps the stories from sounding alike.
+# Chapters are written in parallel, so a different flavour per chapter keeps them from sounding alike.
 FLAVOURS = [
     "a joke",
     "a playful dare",
@@ -73,23 +89,12 @@ FLAVOURS = [
     "a tiny mystery",
 ]
 
-LINES_PROMPT = f"""{VOICE}
-
-Write the fixed lines for this ride:
-- intro: 2-3 sentences that kick off the adventure, like "This is the journey to ...". Joke about the distance or climbing.
-- turn_lines: 6 short, playful ways to announce a turn (under 10 words each). Each one must contain {{turn}} exactly once; it gets replaced by an
-  instruction like "turn left onto Via Roma", so the sentence must stay clear. Examples: "Hold that thought, {{turn}}!",
-  "Plot twist: {{turn}}.", "Before I say anything else, {{turn}}."
-- finish: 1-2 sentences celebrating the arrival.
-Reply with JSON only: {{"intro": "...", "turn_lines": ["..."], "finish": "..."}}"""
-
-
 TASKS = {
     CHAT_PROMPT: "chat",
     PICK_PROMPT: "pick route",
     WEEKLY_PROMPT: "weekly ideas",
-    LINES_PROMPT: "story lines",
-    STORY_PROMPT: "place story",
+    OUTLINE_PROMPT: "story outline",
+    CHAPTER_PROMPT: "story chapter",
 }
 
 
@@ -111,12 +116,18 @@ def _complete(instructions: str, content: str, temperature: float = 0.3) -> dict
 
 
 def _try_complete(instructions: str, content: str, temperature: float) -> dict:
-    """For the optional ride narration: a failed, slow or garbled reply just means fewer lines."""
-    try:
-        return _complete(instructions, content, temperature)
-    except (genai_errors.APIError, httpx.TimeoutException, ValueError) as exc:
-        log.warning("narration call failed: %s", type(exc).__name__)
-        return {}
+    """For the optional ride narration: a failed, slow or garbled reply just means fewer lines.
+    A ServerError (Gemma's free tier answering "overloaded") gets retried after a short pause."""
+    for attempt in range(3):
+        try:
+            return _complete(instructions, content, temperature)
+        except genai_errors.ServerError as exc:
+            log.warning("narration call failed: %s (attempt %d)", type(exc).__name__, attempt + 1)
+            time.sleep(3 * (attempt + 1))
+        except (genai_errors.APIError, httpx.TimeoutException, ValueError) as exc:
+            log.warning("narration call failed: %s", type(exc).__name__)
+            return {}
+    return {}
 
 
 def parse_json(text: str) -> dict:
@@ -154,15 +165,29 @@ def weekly_ideas(days: list[dict], bike: str) -> dict:
     return _complete(WEEKLY_PROMPT, f"Bike: {bike}\n\nForecast:\n{json.dumps(days)}")
 
 
-def _place_story(ride: dict, place: dict, flavour: str) -> str:
-    content = f"Ride:\n{json.dumps(ride)}\n\nFlavour: {flavour}\n\nPlace:\n{json.dumps(place, ensure_ascii=False)}"
-    return _try_complete(STORY_PROMPT, content, 0.9).get("text", "")
+def _chapter(ride: dict, outline: dict, places: list[dict], i: int) -> str:
+    beats = outline.get("beats", [])
+    plan = [
+        {"chapter": n + 1, "place": p["name"], "beat": beats[n] if n < len(beats) else ""} for n, p in enumerate(places)
+    ]
+    content = (
+        f"Ride:\n{json.dumps(ride)}\n\nThe tale: {outline.get('thread', '')}\n\n"
+        f"Chapters:\n{json.dumps(plan, ensure_ascii=False)}\n\n"
+        f"Write chapter {i + 1} ({places[i]['name']}). Flavour: {FLAVOURS[i % len(FLAVOURS)]}.\n"
+        f"Facts about {places[i]['name']}:\n{places[i]['facts']}"
+    )
+    return _try_complete(CHAPTER_PROMPT, content, 0.9).get("text", "")
 
 
 def ride_story(ride: dict, places: list[dict]) -> dict:
-    """Intro/turn lines/finish plus one story per place, all in parallel: a single call writing everything took ~90 s.
+    """An outline first (the running tale, one beat per place, intro, turn lines, finish), then all chapters in
+    parallel, each seeing the whole outline so they connect. One call writing everything took ~90 s.
     stories[i] belongs to places[i] ("" if that one failed)."""
-    with ThreadPoolExecutor(len(places) + 1) as pool:
-        lines = pool.submit(_try_complete, LINES_PROMPT, f"Ride:\n{json.dumps(ride)}", 0.9)
-        stories = [pool.submit(_place_story, ride, p, FLAVOURS[i % len(FLAVOURS)]) for i, p in enumerate(places)]
-        return {**lines.result(), "stories": [s.result() for s in stories]}
+    short = [{"name": p["name"], "facts": p["facts"][:300]} for p in places]
+    outline = _try_complete(
+        OUTLINE_PROMPT, f"Ride:\n{json.dumps(ride)}\n\nPlaces in order:\n{json.dumps(short, ensure_ascii=False)}", 0.9
+    )
+    # Four at a time: all eight at once made Gemma's free tier answer "overloaded" more often.
+    with ThreadPoolExecutor(4) as pool:
+        stories = list(pool.map(lambda i: _chapter(ride, outline, places, i), range(len(places))))
+    return {**outline, "stories": stories}

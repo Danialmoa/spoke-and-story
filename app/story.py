@@ -7,8 +7,8 @@ from shapely.geometry import LineString, Point
 
 from . import agent, scenery, tracing
 
-MAX_STORIES = 6
-KM_PER_STORY = 5
+MAX_STORIES = 8
+KM_PER_STORY = 3
 # Wikipedia's geosearch finds articles around a point; ask every SAMPLE_M along the route.
 SAMPLE_M = 2000
 SEARCH_RADIUS_M = 1500
@@ -42,7 +42,7 @@ def _articles_near(point: list) -> list[dict]:
 
 
 def _summary(title: str) -> str:
-    return _get(f"{WIKI}/api/rest_v1/page/summary/{quote(title.replace(' ', '_'), safe='')}").get("extract", "")[:700]
+    return _get(f"{WIKI}/api/rest_v1/page/summary/{quote(title.replace(' ', '_'), safe='')}").get("extract", "")[:1200]
 
 
 def _geometry(coords: list) -> tuple[LineString, np.ndarray, float]:

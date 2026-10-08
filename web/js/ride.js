@@ -62,15 +62,19 @@ function pointAt(km) {
 }
 
 function ensureStory(route) {
-  if (!stories.has(route)) stories.set(route, api.story(state.req || readForm(), route).catch(() => null));
+  if (!stories.has(route)) {
+    const story = api.story(state.req || readForm(), route).catch(() => null);
+    stories.set(route, story);
+    story.then((s) => route === currentRoute() && prepareRide(route, s));
+  }
   return stories.get(route);
 }
 
-function turnLine(step) {
-  const lines = ride.story?.turn_lines;
+function turnLine(step, steps = ride.steps, story = ride.story) {
+  const lines = story?.turn_lines;
   if (!lines?.length) return step.text;
   const turn = step.text.charAt(0).toLowerCase() + step.text.slice(1);
-  return lines[ride.steps.indexOf(step) % lines.length].replace('{turn}', turn);
+  return lines[steps.indexOf(step) % lines.length].replace('{turn}', turn);
 }
 
 // Only real direction changes are announced and shown: "continue straight", "slight left", "keep right" and
@@ -118,6 +122,20 @@ function narrate(next, done, left) {
       say(story.text, { title: story.place, until: at + 1.5 });
     }
   }
+}
+
+// Santa takes seconds per line, so the whole ride's lines are made in the background, in route order, as soon as
+// the story is written, usually before the ride starts. Same text = same cached audio once riding.
+function prepareRide(route, story, fromKm = 0) {
+  if (!story) return;
+  loadVoice();
+  const kms = routeKm(route);
+  const steps = keyTurns(route, kms);
+  const lines = steps.map((step) => [kms[step.index], turnLine(step, steps, story)]);
+  for (const s of story.stories) lines.push([kms[Math.min(s.index, kms.length - 1)], s.text]);
+  prepare(story.intro);
+  lines.sort((a, b) => a[0] - b[0]).forEach(([km, text]) => km >= fromKm && prepare(text));
+  prepare(story.finish);
 }
 
 function setTurn(arrow, dist, text, kind = '') {
@@ -224,6 +242,7 @@ async function startRide(simulate) {
     if (ride.route !== route || $('#ride').hidden) return;
     ride.story = story;
     ride.storyWait = false;
+    prepareRide(route, story, ride.km);
     if (!voice.busy) showSubtitle(null);
     if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
   });

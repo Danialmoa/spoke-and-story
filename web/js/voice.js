@@ -88,13 +88,14 @@ function renderVoiceStatus() {
   $('#voice-status').textContent = VOICE_STATUS[voice.status];
 }
 
+// Lines wait for Santa to finish loading instead of being skipped, so they can be queued as soon as the story is here.
 function prepare(text) {
-  if (voice.status !== 'ready' || !text) return null;
-  const key = text;
-  if (!voice.cache.has(key)) {
-    voice.cache.set(key, kokoro({ text, voice: VOICE }).then((blob) => URL.createObjectURL(blob), () => null));
+  if (!text || !voice.ready || voice.status === 'failed') return null;
+  if (!voice.cache.has(text)) {
+    const audio = voice.ready.then(() => (voice.status === 'ready' ? kokoro({ text, voice: VOICE }) : null));
+    voice.cache.set(text, audio.then((blob) => (blob ? URL.createObjectURL(blob) : null), () => null));
   }
-  return voice.cache.get(key);
+  return voice.cache.get(text);
 }
 
 // iOS only lets a page play sound after it has played something during a tap, so call this from the ride-start click.
@@ -129,13 +130,19 @@ async function drainVoice() {
   voice.busy = false;
 }
 
+// One voice only: switching to the browser voice when Santa was late sounded like two people talking.
+// A story waits for Santa's audio; a turn that isn't ready in time stays on the banner instead.
+// The browser voice is used only when Kokoro can't run at all on this device.
 async function speakOne(item) {
   const session = voice.session;
-  // Stories can wait a little for Kokoro to finish loading; turn cues can't.
-  if (voice.status === 'loading' && !item.urgent) await Promise.race([voice.ready, sleep(20000)]);
-  const url = await Promise.race([prepare(item.text) || Promise.resolve(null), sleep(4000).then(() => null)]);
-  if (session !== voice.session) return;
-  await (url ? playUrl(url) : browserSay(item.text));
+  if (voice.status === 'failed' || !voice.ready) {
+    await browserSay(item.text);
+    return;
+  }
+  const url = await Promise.race([prepare(item.text), sleep(item.urgent ? 8000 : 90000).then(() => null)]);
+  if (session !== voice.session || !url) return;
+  if (item.until != null && ride.km > item.until) return;
+  await playUrl(url);
 }
 
 function playUrl(url) {
@@ -161,7 +168,7 @@ function browserSay(text) {
     utterance.onerror = resolve;
     voice.stop = resolve;
     // Chrome sometimes never fires onend; one lost event must not freeze the narration.
-    setTimeout(resolve, 2500 + text.length * 80);
+    setTimeout(resolve, 4000 + text.length * 110);
     speechSynthesis.speak(utterance);
   });
 }
