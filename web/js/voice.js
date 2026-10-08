@@ -25,12 +25,13 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAE
 const VOICE_STATUS = {
   idle: '',
   loading: "Loading Kokoro, an open-source voice model (~90 MB, first ride only)… you'll hear the browser voice until it's ready.",
-  ready: 'Voice: Kokoro, running on this device',
+  ready: 'Voice: Santa (Kokoro, running on this device)',
   failed: "Kokoro couldn't load here, so you'll hear your browser's voice.",
 };
 
+const VOICE = 'am_santa';
+
 const voice = {
-  name: 'am_puck',
   status: 'idle',
   worker: null,
   ready: null,
@@ -60,7 +61,7 @@ function failVoice() {
 }
 
 function loadVoice() {
-  if (voice.name !== 'browser' && !voice.worker) {
+  if (!voice.worker) {
     try {
       voice.worker = new Worker(URL.createObjectURL(new Blob([KOKORO_WORKER], { type: 'text/javascript' })), { type: 'module' });
     } catch {
@@ -84,14 +85,14 @@ function loadVoice() {
 }
 
 function renderVoiceStatus() {
-  $('#voice-status').textContent = voice.name === 'browser' ? "Voice: your browser's built-in voice" : VOICE_STATUS[voice.status];
+  $('#voice-status').textContent = VOICE_STATUS[voice.status];
 }
 
 function prepare(text) {
-  if (voice.name === 'browser' || voice.status !== 'ready' || !text) return null;
-  const key = `${voice.name}|${text}`;
+  if (voice.status !== 'ready' || !text) return null;
+  const key = text;
   if (!voice.cache.has(key)) {
-    voice.cache.set(key, kokoro({ text, voice: voice.name }).then((blob) => URL.createObjectURL(blob), () => null));
+    voice.cache.set(key, kokoro({ text, voice: VOICE }).then((blob) => URL.createObjectURL(blob), () => null));
   }
   return voice.cache.get(key);
 }
@@ -183,29 +184,4 @@ function showSubtitle(item) {
   if (!item) return;
   $('#ride-story-title').textContent = item.title;
   $('#ride-story-text').textContent = item.text;
-}
-
-function setVoiceName(name) {
-  voice.name = name;
-  voice.cache.clear();
-  try {
-    localStorage.setItem('voice', name);
-  } catch {
-    // Private mode: the choice just isn't remembered.
-  }
-  if (!$('#ride').hidden) loadVoice();
-  renderVoiceStatus();
-}
-
-function wireVoice() {
-  const pick = $('#ride-voice-pick');
-  let saved = null;
-  try {
-    saved = localStorage.getItem('voice');
-  } catch {
-    saved = null;
-  }
-  if ([...pick.options].some((o) => o.value === saved)) voice.name = saved;
-  pick.value = voice.name;
-  pick.addEventListener('change', () => setVoiceName(pick.value));
 }

@@ -89,7 +89,8 @@ function turnAngle(coords, kms, index) {
 function keyTurns(route, kms) {
   return (route.steps || []).filter((s) => KEY_TURNS.has(s.type) && turnAngle(route.coords, kms, s.index) >= MIN_TURN_DEG);
 }
-const WAITING = { title: 'Getting ready', text: 'Your guide is writing the stories for this route. Give it a few seconds…' };
+const WAITING = { title: 'Getting ready', text: 'Your guide is writing the stories for this route…' };
+const STORY_WAIT_MS = 20000;
 
 function narrate(next, done, left) {
   const { kms } = ride;
@@ -179,8 +180,13 @@ function simulateRide() {
   let km = 0;
   const started = Date.now();
   ride.timer = setInterval(() => {
-    // Wait at the start while the story is being written (max 60 s), or the intro and first stories get skipped.
-    if (ride.storyWait && Date.now() - started < 60000) return;
+    // Wait at the start while the story is being written, or the intro and first stories get skipped.
+    // Capped, so a slow story never looks like a broken ride; stories that arrive later still play further on.
+    const waited = Date.now() - started;
+    if (ride.storyWait && waited < STORY_WAIT_MS) {
+      if (!voice.busy) showSubtitle({ ...WAITING, text: `${WAITING.text} Starting in ${Math.ceil((STORY_WAIT_MS - waited) / 1000)}s.` });
+      return;
+    }
     km = Math.min(total, km + (voice.busy ? SIM_KM_TALKING : SIM_KM_PER_TICK));
     const speedKmh = Math.max(8, Math.min(45, 26 - gradeAt(nearestIndex(ride.kms, km)) * 2.2));
     onPosition({ ...pointAt(km), speedKmh });
@@ -210,8 +216,10 @@ async function startRide(simulate) {
   loadVoice();
   showSubtitle(WAITING);
   setTimeout(() => {
-    if (ride.route === route) ride.storyWait = false;
-  }, 60000);
+    if (ride.route !== route || !ride.storyWait) return;
+    ride.storyWait = false;
+    if (!voice.busy) showSubtitle(null);
+  }, STORY_WAIT_MS);
   ensureStory(route).then((story) => {
     if (ride.route !== route || $('#ride').hidden) return;
     ride.story = story;

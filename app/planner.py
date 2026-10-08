@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import agent, ors, route_stats, scenery
+from . import agent, ors, photon, route_stats, scenery
 
 Preference = Literal["water", "forest", "views", "quiet"]
 NO_SCENERY_NOTE = "(OpenStreetMap scenery data was unavailable, so water, forest and views were not compared.)"
@@ -48,9 +48,9 @@ def misfit(route: dict, req: PlanRequest) -> str | None:
 
 
 def plan(req: PlanRequest) -> dict:
-    start = ors.geocode(req.start)
+    start = photon.geocode(req.start)
     if req.end:
-        end = ors.geocode(req.end, near=(start["lat"], start["lon"]))
+        end = photon.geocode(req.end, near=(start["lat"], start["lon"]))
         features = ors.a_to_b((start["lat"], start["lon"]), (end["lat"], end["lon"]), req.bike, req.priority)
     else:
         features = ors.loops(start["lat"], start["lon"], req.distance_km, req.bike, req.priority)

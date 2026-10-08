@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 
-from . import agent, openmeteo, ors, planner, story, tracing, usage
+from . import agent, openmeteo, photon, planner, story, tracing, usage
 from .planner import PlanRequest
 
 load_dotenv()
@@ -96,8 +96,8 @@ def plan(req: PlanRequest):
 @app.get("/api/places")
 def places(q: str = Query(min_length=2, max_length=100), near: str | None = None):
     """Suggestions while typing; near is "lat,lon" of the start, so nearby matches come first."""
-    point = ors.geocode(near) if near else None
-    return ors.search(q, (point["lat"], point["lon"]) if point else None)
+    point = photon.geocode(near) if near else None
+    return photon.search(q, (point["lat"], point["lon"]) if point else None)
 
 
 @app.post("/api/pick")
@@ -137,7 +137,7 @@ def chat(body: ChatRequest):
 
 @app.get("/api/weekly")
 def weekly(place: str, bike: Literal["road", "gravel", "mtb"] = "road"):
-    loc = ors.geocode(place)
+    loc = photon.geocode(place)
     days = openmeteo.forecast(loc["lat"], loc["lon"])
     return {"place": loc, "days": days, **agent.weekly_ideas(days, bike)}
 

@@ -116,6 +116,7 @@ function wireUi() {
     const card = e.target.closest('#cards .rcard');
     if (!card) return;
     selectRoute(card.dataset.id);
+    ensureStory(currentRoute());
     if (e.target.closest('[data-show]') && isNarrow()) $('#map-frame').scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
   });
   let lastWidth = 0;
@@ -133,7 +134,6 @@ async function boot() {
   wireSearch();
   wireRide();
   wireLogo();
-  wireVoice();
   initMap();
   renderThread();
   locate().then((here) => {

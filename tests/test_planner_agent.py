@@ -37,7 +37,7 @@ def _feature(km: float, climb: float, minutes: float) -> dict:
 def test_plan_keeps_loops_closest_to_distance_and_ranks_by_priority(monkeypatch):
     features = [_feature(145, 8000, 700), _feature(62, 2900, 220), _feature(44, 900, 140),
                 _feature(38, 300, 150), _feature(41, 600, 120), _feature(28, 100, 90)]  # fmt: skip
-    monkeypatch.setattr(planner.ors, "geocode", lambda place: {"name": place, "lat": 45.0, "lon": 9.0})
+    monkeypatch.setattr(planner.photon, "geocode", lambda place: {"name": place, "lat": 45.0, "lon": 9.0})
     monkeypatch.setattr(planner.ors, "loops", lambda *args: features)
     monkeypatch.setattr(planner.scenery, "scenery", lambda routes: None)
 
