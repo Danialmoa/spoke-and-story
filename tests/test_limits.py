@@ -22,6 +22,15 @@ def test_expensive_endpoint_is_limited_per_client_and_says_so_kindly():
     assert client.post("/api/plan", headers={"X-Forwarded-For": "198.51.100.2"}).status_code == 200
 
 
+def test_cloudflare_client_ip_wins_over_a_faked_forwarded_header():
+    client = make_client()
+    rider = {"CF-Connecting-IP": "203.0.113.7"}
+    for _ in range(limits.MAX_CALLS):
+        client.post("/api/plan", headers=rider)
+    faked = client.post("/api/plan", headers={**rider, "X-Forwarded-For": "1.2.3.4"})
+    assert faked.status_code == 429
+
+
 def test_cheap_endpoints_are_never_limited():
     client = make_client()
     assert all(client.get("/api/places").status_code == 200 for _ in range(limits.MAX_CALLS + 5))

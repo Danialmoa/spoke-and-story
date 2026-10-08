@@ -22,6 +22,11 @@ SLOW_DOWN = "Easy there, speedster! Too many requests in a minute. Drink some wa
 
 
 def client_key(request: Request) -> str:
+    # Render sits behind Cloudflare, which overwrites CF-Connecting-IP with the real client address. A client can put
+    # anything at the front of X-Forwarded-For (tested on the live site), so that is only the local fallback.
+    real = request.headers.get("cf-connecting-ip")
+    if real:
+        return real
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
