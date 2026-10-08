@@ -42,6 +42,19 @@ async function pickBest(req, res) {
   }
 }
 
+// Our own message instead of the browser's "Please fill in this field" bubble (the form is novalidate).
+function markMissing(input, missing) {
+  input.classList.toggle('is-missing', missing);
+  $(`#${input.id}-msg`).hidden = !missing;
+}
+
+function formFilled() {
+  const empty = [$('#f-end'), $('#f-start')].filter((input) => !input.value.trim());
+  [$('#f-end'), $('#f-start')].forEach((input) => markMissing(input, empty.includes(input)));
+  empty[0]?.focus();
+  return !empty.length;
+}
+
 function placesNear(input) {
   return input.id === 'f-end' ? readForm().start : state.here;
 }
@@ -74,6 +87,7 @@ function wirePlaces(input) {
 
   input.addEventListener('input', () => {
     setSearched(false);
+    markMissing(input, false);
     clearTimeout(timer);
     const q = input.value.trim();
     if (q.length < 3 || q === MY_LOC) {
@@ -135,6 +149,7 @@ function wireSearch() {
     state.here = await locate();
     if (state.here) {
       $('#f-start').value = MY_LOC;
+      markMissing($('#f-start'), false);
       setSearched(false);
       showHere(true);
     } else {
@@ -149,6 +164,6 @@ function wireSearch() {
   });
   $('#plan-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    planFromForm();
+    if (formFilled()) planFromForm();
   });
 }

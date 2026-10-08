@@ -52,13 +52,14 @@
       </div>
 
       <div class="pane" id="pane-nav" role="tabpanel" aria-labelledby="tab-nav">
-        <form class="form" id="plan-form">
+        <form class="form" id="plan-form" novalidate>
           <div class="field">
             <label class="label" for="f-end">Destination</label>
             <div class="ac">
               <input class="input input-big" id="f-end" placeholder="e.g. Orobia Climbing, Curno" required autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="f-end-list" aria-expanded="false">
               <ul class="ac-list" id="f-end-list" role="listbox" hidden></ul>
             </div>
+            <p class="field-msg" id="f-end-msg" hidden>Where do you want to ride? Type a place, like “Orobia Climbing”.</p>
           </div>
           <div class="field">
             <label class="label" for="f-start">From</label>
@@ -69,6 +70,7 @@
               </div>
               <button class="btn btn-ghost btn-small" type="button" id="f-locate">Use my location</button>
             </div>
+            <p class="field-msg" id="f-start-msg" hidden>Where do you start? Type a town, or tap “Use my location”.</p>
           </div>
           <div class="field" role="group" aria-labelledby="f-priority-label">
             <span class="label" id="f-priority-label">Priority</span>
