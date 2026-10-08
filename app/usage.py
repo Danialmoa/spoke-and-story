@@ -3,7 +3,7 @@ import logging
 from collections import Counter
 from datetime import datetime, timezone
 
-log = logging.getLogger("grassroute.usage")
+log = logging.getLogger("spokestory.usage")
 # In memory only: resets when the server restarts. The log lines are the lasting record (Render keeps them).
 COUNTS: Counter = Counter()
 SINCE = datetime.now(timezone.utc).isoformat(timespec="seconds")

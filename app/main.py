@@ -6,6 +6,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 
@@ -14,9 +15,11 @@ from .planner import PlanRequest
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+# httpx logs full request URLs at INFO, which include the ORS key, typed addresses and GPS points.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
-app = FastAPI(title="GrassRoute")
-INDEX = Path(__file__).parent.parent / "web" / "index.html"
+app = FastAPI(title="Spoke & Story")
+WEB = Path(__file__).parent.parent / "web"
 
 
 class Message(BaseModel):
@@ -135,4 +138,7 @@ def weekly(place: str, bike: Literal["road", "gravel", "mtb"] = "road"):
 @app.get("/", response_class=HTMLResponse)
 def index():
     # web/index.html is also published as an Artifact, which doesn't allow a doctype in the file.
-    return "<!doctype html>\n" + INDEX.read_text()
+    return "<!doctype html>\n" + (WEB / "index.html").read_text()
+
+
+app.mount("/", StaticFiles(directory=WEB), name="web")

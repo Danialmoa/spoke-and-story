@@ -16,7 +16,7 @@ NEAR_M = 1000
 # The intro and finish lines already cover the start and the destination.
 SKIP_ENDS_M = 1000
 WIKI = "https://en.wikipedia.org"
-USER_AGENT = "GrassRoute/0.1 (DEV Hacktoberfest project)"
+USER_AGENT = "SpokeAndStory/0.1 (DEV Hacktoberfest project; https://dev.to/challenges/hf26)"
 
 
 def _get(url: str, params: dict | None = None) -> dict:

@@ -40,7 +40,7 @@ def _query(routes: list[list]) -> str:
 def _overpass(query: str) -> list[dict] | None:
     for url in OVERPASS_URLS:
         try:
-            r = httpx.post(url, data={"data": query}, headers={"User-Agent": "grassroute/0.1"}, timeout=25)
+            r = httpx.post(url, data={"data": query}, headers={"User-Agent": "SpokeAndStory/0.1"}, timeout=25)
         except httpx.TransportError:
             continue
         # A 200 with a "remark" means the server hit a runtime error and the data is incomplete.

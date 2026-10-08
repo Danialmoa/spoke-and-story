@@ -1,4 +1,4 @@
-# GrassRoute
+# Spoke & Story
 
 Scenic bike routes, picked by an open-source AI. Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge.
 
