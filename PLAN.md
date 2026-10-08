@@ -101,7 +101,8 @@ Gemma answers in ~2-3 s, so the guide reacts **while riding** (`/api/live`, `/ap
 - **Santa is the bottleneck:** Kokoro makes ~2 words/s here, so a 70-90 word live chapter takes ~30-35 s. In Simulate
   the live chapter won at 2 of 5 places (the rider crawls up to 30 s waiting for it). In GPS (asked ~60 s ahead) it
   should usually win.
-- [ ] Idea to make Santa ~2x faster in Chrome: send `Cross-Origin-Opener-Policy: same-origin` and
+- Decision (9 Oct): fine that Simulate mostly plays the pre-written chapters; judge it on a real GPS ride (Friday).
+- [ ] Parked: make Santa ~2x faster in Chrome: send `Cross-Origin-Opener-Policy: same-origin` and
       `Cross-Origin-Embedder-Policy: credentialless` (lets Kokoro use more threads). Safari ignores it. Needs a test
       of maps, fonts and the voice on a phone first. Shorter live chapters (~40 words) would also help.
 - Few OSM cafés/bars are tagged as old or historic, so spot lines lean on the kind of place and its food.
