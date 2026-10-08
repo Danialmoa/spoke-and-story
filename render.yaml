@@ -18,5 +18,9 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: BACKBOARD_API_KEY
+        sync: false
+      - key: BACKBOARD_MODEL
+        value: google/gemma-4-26b-a4b-it
       - key: SENTRY_DSN
         sync: false

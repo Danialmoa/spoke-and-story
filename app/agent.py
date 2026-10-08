@@ -13,6 +13,8 @@ from google.genai import errors as genai_errors
 from google.genai import types
 
 log = logging.getLogger("spokestory.agent")
+BACKBOARD_URL = "https://app.backboard.io/api"
+ASSISTANT = "Spoke & Story"
 
 CHAT_PROMPT = """You are Spoke & Story, a friendly cycling buddy who plans scenic bike rides.
 In this chat you find out what ride the user wants, then hand a plan request to the route planner.
@@ -104,15 +106,74 @@ def _client() -> genai.Client:
     return genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=60_000))
 
 
+def _headers() -> dict:
+    return {"X-API-Key": os.environ["BACKBOARD_API_KEY"]}
+
+
+@cache
+def _assistant() -> str:
+    """One assistant for every call: without an assistant_id each message creates a new "Default Assistant"."""
+    r = httpx.get(f"{BACKBOARD_URL}/assistants", headers=_headers(), params={"name": ASSISTANT, "limit": 1}, timeout=30)
+    r.raise_for_status()
+    found = [a for a in r.json() if a["name"] == ASSISTANT]
+    if found:
+        return found[0]["assistant_id"]
+    body = {
+        "name": ASSISTANT,
+        "system_prompt": "The Spoke & Story ride guide. Each message brings its own instructions.",
+    }
+    r = httpx.post(f"{BACKBOARD_URL}/assistants", headers=_headers(), json=body, timeout=30)
+    r.raise_for_status()
+    return r.json()["assistant_id"]
+
+
+def _backboard(instructions: str, content: str) -> str:
+    """Gemma 4 through Backboard and OpenRouter: ~2 s per call, because those hosts run it without the
+    "thinking" pass that Google AI Studio can't switch off (~20-40 s per call)."""
+    model = os.environ.get("BACKBOARD_MODEL", "google/gemma-4-26b-a4b-it")
+    body = {
+        "content": content,
+        "system_prompt": instructions,
+        "assistant_id": _assistant(),
+        "llm_provider": "openrouter",
+        "model_name": model,
+        "json_output": True,
+        "memory": "off",
+        "stream": False,
+    }
+    with sentry_sdk.start_span(op="gen_ai.chat", name=f"chat {model}") as span:
+        r = httpx.post(f"{BACKBOARD_URL}/threads/messages", headers=_headers(), json=body, timeout=60)
+        r.raise_for_status()
+        reply = r.json()
+        span.set_data("gen_ai.request.model", model)
+        span.set_data("gen_ai.usage.input_tokens", reply.get("input_tokens"))
+        span.set_data("gen_ai.usage.output_tokens", reply.get("output_tokens"))
+    # Backboard answers HTTP 200 even when the model call failed; the status says so.
+    if reply.get("status") != "COMPLETED":
+        raise ValueError(f"Backboard status {reply.get('status')}")
+    return reply.get("content") or ""
+
+
+def _google(instructions: str, content: str, temperature: float) -> str:
+    response = _client().models.generate_content(
+        model=os.environ.get("LLM_MODEL", "gemma-4-26b-a4b-it"),
+        contents=content,
+        config=types.GenerateContentConfig(system_instruction=instructions, temperature=temperature),
+    )
+    return response.text
+
+
 def _complete(instructions: str, content: str, temperature: float = 0.3) -> dict:
-    # Names the agent step in Sentry traces; the gen_ai span inside comes from sentry-sdk's google-genai integration.
+    """Backboard first when BACKBOARD_API_KEY is set, Google AI Studio otherwise or when Backboard fails.
+    Backboard doesn't take a temperature, so it only applies to the Google path."""
+    # Names the agent step in Sentry traces; the gen_ai spans inside come from _backboard or the google-genai integration.
     with sentry_sdk.start_span(op="function", name=f"agent: {TASKS.get(instructions, 'llm')}"):
-        response = _client().models.generate_content(
-            model=os.environ.get("LLM_MODEL", "gemma-4-26b-a4b-it"),
-            contents=content,
-            config=types.GenerateContentConfig(system_instruction=instructions, temperature=temperature),
-        )
-    return parse_json(response.text)
+        if os.environ.get("BACKBOARD_API_KEY"):
+            try:
+                return parse_json(_backboard(instructions, content))
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning("Backboard call failed, using Google instead: %s", type(exc).__name__)
+        return parse_json(_google(instructions, content, temperature))
 
 
 def _try_complete(instructions: str, content: str, temperature: float) -> dict:
