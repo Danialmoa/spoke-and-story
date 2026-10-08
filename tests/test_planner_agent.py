@@ -79,3 +79,20 @@ def test_chat_step_passes_location_and_stops_asking_after_two_questions(monkeypa
         messages + [{"role": "assistant", "content": "Any climb limit?"}, {"role": "user", "content": "no"}]
     )
     assert "Reply with a plan now" in sent[-1]
+
+
+def test_pick_reply_without_text_still_answers(monkeypatch):
+    monkeypatch.setattr(agent, "_complete", lambda instructions, content: {"best": "B"})
+    assert planner.pick(PlanRequest(start="Lecco"), [_route(id="A"), _route(id="B")], has_scenery=True) == {
+        "best": "B",
+        "explanation": "",
+    }
+
+
+def test_pick_hides_the_loop_distance_for_a_to_b_rides(monkeypatch):
+    sent = []
+    monkeypatch.setattr(agent, "_complete", lambda instructions, content: sent.append(content) or {"best": "A"})
+    planner.pick(PlanRequest(start="Lecco", end="Curno"), [_route(id="A")], has_scenery=True)
+    planner.pick(PlanRequest(start="Lecco", distance_km=40), [_route(id="A")], has_scenery=True)
+    asked = [c.split("Candidates")[0] for c in sent]
+    assert ["distance_km" in a for a in asked] == [False, True]

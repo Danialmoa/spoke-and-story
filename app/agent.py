@@ -1,12 +1,17 @@
 import json
+import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 
+import httpx
+import sentry_sdk
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
+
+log = logging.getLogger("spokestory.agent")
 
 CHAT_PROMPT = """You are Spoke & Story, a friendly cycling buddy who plans scenic bike rides.
 In this chat you find out what ride the user wants, then hand a plan request to the route planner.
@@ -72,25 +77,46 @@ LINES_PROMPT = f"""{VOICE}
 
 Write the fixed lines for this ride:
 - intro: 2-3 sentences that kick off the adventure, like "This is the journey to ...". Joke about the distance or climbing.
-- turn_lines: 10 short, playful ways to announce a turn. Each one must contain {{turn}} exactly once; it gets replaced by an
+- turn_lines: 6 short, playful ways to announce a turn (under 10 words each). Each one must contain {{turn}} exactly once; it gets replaced by an
   instruction like "turn left onto Via Roma", so the sentence must stay clear. Examples: "Hold that thought, {{turn}}!",
   "Plot twist: {{turn}}.", "Before I say anything else, {{turn}}."
 - finish: 1-2 sentences celebrating the arrival.
 Reply with JSON only: {{"intro": "...", "turn_lines": ["..."], "finish": "..."}}"""
 
 
+TASKS = {
+    CHAT_PROMPT: "chat",
+    PICK_PROMPT: "pick route",
+    WEEKLY_PROMPT: "weekly ideas",
+    LINES_PROMPT: "story lines",
+    STORY_PROMPT: "place story",
+}
+
+
 @cache
 def _client() -> genai.Client:
-    return genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    # google-genai has no timeout by default; a hung call would hold a server thread forever.
+    return genai.Client(api_key=os.environ["GEMINI_API_KEY"], http_options=types.HttpOptions(timeout=60_000))
 
 
 def _complete(instructions: str, content: str, temperature: float = 0.3) -> dict:
-    response = _client().models.generate_content(
-        model=os.environ.get("LLM_MODEL", "gemma-4-26b-a4b-it"),
-        contents=content,
-        config=types.GenerateContentConfig(system_instruction=instructions, temperature=temperature),
-    )
+    # Names the agent step in Sentry traces; the gen_ai span inside comes from sentry-sdk's google-genai integration.
+    with sentry_sdk.start_span(op="function", name=f"agent: {TASKS.get(instructions, 'llm')}"):
+        response = _client().models.generate_content(
+            model=os.environ.get("LLM_MODEL", "gemma-4-26b-a4b-it"),
+            contents=content,
+            config=types.GenerateContentConfig(system_instruction=instructions, temperature=temperature),
+        )
     return parse_json(response.text)
+
+
+def _try_complete(instructions: str, content: str, temperature: float) -> dict:
+    """For the optional ride narration: a failed, slow or garbled reply just means fewer lines."""
+    try:
+        return _complete(instructions, content, temperature)
+    except (genai_errors.APIError, httpx.TimeoutException, ValueError) as exc:
+        log.warning("narration call failed: %s", type(exc).__name__)
+        return {}
 
 
 def parse_json(text: str) -> dict:
@@ -112,6 +138,9 @@ def chat_step(messages: list[dict], location: str | None = None) -> dict:
 
 def pick_route(request: dict, routes: list[dict], has_scenery: bool = True) -> dict:
     stats = [{k: v for k, v in r.items() if k not in ("coords", "profile", "steps")} for r in routes]
+    if request.get("end"):
+        # distance_km is only the loop length; left in, the model judges A-to-B routes against the default 50 km.
+        request = {k: v for k, v in request.items() if k != "distance_km"}
     content = f"Rider asked for:\n{json.dumps(request)}\n\nCandidates:\n{json.dumps(stats)}"
     if not has_scenery:
         content += "\n\nScenery data is unavailable: ignore water_km, forest_km and viewpoints, and don't mention them."
@@ -127,16 +156,13 @@ def weekly_ideas(days: list[dict], bike: str) -> dict:
 
 def _place_story(ride: dict, place: dict, flavour: str) -> str:
     content = f"Ride:\n{json.dumps(ride)}\n\nFlavour: {flavour}\n\nPlace:\n{json.dumps(place, ensure_ascii=False)}"
-    try:
-        return _complete(STORY_PROMPT, content, 0.9).get("text", "")
-    except (genai_errors.APIError, ValueError):
-        return ""  # one missing story shouldn't cost the rider the whole narration
+    return _try_complete(STORY_PROMPT, content, 0.9).get("text", "")
 
 
 def ride_story(ride: dict, places: list[dict]) -> dict:
     """Intro/turn lines/finish plus one story per place, all in parallel: a single call writing everything took ~90 s.
     stories[i] belongs to places[i] ("" if that one failed)."""
     with ThreadPoolExecutor(len(places) + 1) as pool:
-        lines = pool.submit(_complete, LINES_PROMPT, f"Ride:\n{json.dumps(ride)}", 0.9)
+        lines = pool.submit(_try_complete, LINES_PROMPT, f"Ride:\n{json.dumps(ride)}", 0.9)
         stories = [pool.submit(_place_story, ride, p, FLAVOURS[i % len(FLAVOURS)]) for i, p in enumerate(places)]
         return {**lines.result(), "stories": [s.result() for s in stories]}

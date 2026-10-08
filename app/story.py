@@ -5,7 +5,7 @@ import httpx
 import numpy as np
 from shapely.geometry import LineString, Point
 
-from . import agent, scenery
+from . import agent, scenery, tracing
 
 MAX_STORIES = 6
 KM_PER_STORY = 5
@@ -22,7 +22,8 @@ USER_AGENT = "SpokeAndStory/0.1 (DEV Hacktoberfest project; https://dev.to/chall
 def _get(url: str, params: dict | None = None) -> dict:
     """Wikipedia is optional flavour: when it's unreachable the ride just has fewer stories."""
     try:
-        r = httpx.get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=10, follow_redirects=True)
+        with tracing.span("Wikipedia"):
+            r = httpx.get(url, params=params, headers={"User-Agent": USER_AGENT}, timeout=10, follow_redirects=True)
     except httpx.TransportError:
         return {}
     return r.json() if r.status_code == 200 else {}
@@ -41,7 +42,7 @@ def _articles_near(point: list) -> list[dict]:
 
 
 def _summary(title: str) -> str:
-    return _get(f"{WIKI}/api/rest_v1/page/summary/{quote(title.replace(' ', '_'))}").get("extract", "")[:700]
+    return _get(f"{WIKI}/api/rest_v1/page/summary/{quote(title.replace(' ', '_'), safe='')}").get("extract", "")[:700]
 
 
 def _geometry(coords: list) -> tuple[LineString, np.ndarray, float]:

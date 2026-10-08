@@ -1,7 +1,10 @@
-const ride = { route: null, kms: null, steps: [], climbLeft: null, idx: 0, km: 0, offRoute: false, lastFix: null, rider: null, watch: null, timer: null, wake: null, spoken: new Set(), voice: true };
+const ride = { route: null, kms: null, steps: [], climbLeft: null, idx: 0, km: 0, offRoute: false, lastFix: null, rider: null, watch: null, timer: null, wake: null, spoken: new Set(), voice: true, story: null, mode: 'gps' };
 const TURN = { 0: '↰', 1: '↱', 2: '↰', 3: '↱', 4: '↖', 5: '↗', 6: '↑', 7: '⟳', 8: '⟳', 9: '↶', 10: '⚑', 11: '↑', 12: '↖', 13: '↗' };
 const OFF_ROUTE_KM = 0.06;
 const SIM_KM_PER_TICK = 0.06;
+// While the guide is talking the simulated rider crawls, so the narration can be heard.
+const SIM_KM_TALKING = 0.008;
+const stories = new WeakMap();
 const RIDER = '<svg viewBox="0 0 42 42" aria-hidden="true"><circle class="rider-ring" cx="21" cy="21" r="17"/><path class="rider-tip" d="M21 8 L30 31 L21 26 L12 31 Z"/></svg>';
 const fmtDist = (km) => (km >= 1 ? `${km.toFixed(1)} km` : `${Math.max(10, Math.round(km * 100) * 10)} m`);
 
@@ -58,8 +61,47 @@ function pointAt(km) {
   };
 }
 
-function speak(text) {
-  if (ride.voice && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+function ensureStory(route) {
+  if (!stories.has(route)) stories.set(route, api.story(state.req || readForm(), route).catch(() => null));
+  return stories.get(route);
+}
+
+function turnLine(step) {
+  const lines = ride.story?.turn_lines;
+  if (!lines?.length) return step.text;
+  const turn = step.text.charAt(0).toLowerCase() + step.text.slice(1);
+  return lines[ride.steps.indexOf(step) % lines.length].replace('{turn}', turn);
+}
+
+// Depart and arrive steps are covered by the intro and the finish line.
+const SILENT_STEPS = new Set([10, 11]);
+
+function narrate(next, done, left) {
+  const { kms } = ride;
+  if (left < 0.05) {
+    if (!ride.spoken.has('finish')) {
+      ride.spoken.add('finish');
+      say(ride.story?.finish || 'You made it. Nice ride!', { title: 'Finish' });
+      api.event({ event: 'ride_finish', mode: ride.mode, km: ride.route.distance_km, area: areaOf(ride.route.coords[0]) });
+    }
+    return;
+  }
+  if (next && !SILENT_STEPS.has(next.type)) {
+    const toNext = kms[next.index] - done;
+    if (toNext <= 1) prepare(turnLine(next));
+    if (toNext <= 0.2 && !ride.spoken.has(next.index)) {
+      ride.spoken.add(next.index);
+      say(turnLine(next), { urgent: true, until: kms[next.index] + 0.03 });
+    }
+  }
+  for (const story of ride.story?.stories || []) {
+    const at = kms[Math.min(story.index, kms.length - 1)];
+    if (done >= at - 2 && done < at) prepare(story.text);
+    if (done >= at - 0.3 && !ride.spoken.has(`story-${story.index}`)) {
+      ride.spoken.add(`story-${story.index}`);
+      say(story.text, { title: story.place, until: at + 1.5 });
+    }
+  }
 }
 
 function setTurn(arrow, dist, text, kind = '') {
@@ -78,20 +120,12 @@ function renderRide(speedKmh) {
   const next = ride.steps.find((s) => s.index > idx);
   if (left < 0.05) {
     setTurn('⚑', 'Done', `${total.toFixed(1)} km and ${route.climb_m} m of climbing. Now go touch some grass.`, 'done');
-    if (!ride.spoken.has('done')) {
-      ride.spoken.add('done');
-      speak('You made it. Nice ride!');
-    }
   } else if (ride.offRoute) {
     setTurn('!', 'Off route', 'Head back to the dashed line.', 'off');
   } else if (next) {
-    const toNext = kms[next.index] - done;
-    setTurn(TURN[next.type] || '↑', fmtDist(toNext), next.text);
-    if (toNext <= 0.15 && !ride.spoken.has(next.index)) {
-      ride.spoken.add(next.index);
-      speak(`In ${Math.max(10, Math.round(toNext * 100) * 10)} metres, ${next.text}`);
-    }
+    setTurn(TURN[next.type] || '↑', fmtDist(kms[next.index] - done), next.text);
   }
+  if (!ride.offRoute) narrate(next, done, left);
   $('#r-speed').textContent = speedKmh.toFixed(1);
   $('#r-done').textContent = done.toFixed(1);
   $('#r-left').textContent = left.toFixed(1);
@@ -127,7 +161,7 @@ function simulateRide() {
   const total = ride.kms[ride.kms.length - 1];
   let km = 0;
   ride.timer = setInterval(() => {
-    km = Math.min(total, km + SIM_KM_PER_TICK);
+    km = Math.min(total, km + (voice.busy ? SIM_KM_TALKING : SIM_KM_PER_TICK));
     const speedKmh = Math.max(8, Math.min(45, 26 - gradeAt(nearestIndex(ride.kms, km)) * 2.2));
     onPosition({ ...pointAt(km), speedKmh });
     if (km >= total) clearInterval(ride.timer);
@@ -137,9 +171,10 @@ function simulateRide() {
 async function startRide(simulate) {
   const route = currentRoute();
   if (!route || !map.m) return;
+  unlockAudio();
   Object.assign(ride, {
     route, kms: routeKm(route), steps: route.steps || [], climbLeft: climbLeftFrom(route.coords),
-    idx: 0, km: 0, offRoute: false, lastFix: null, spoken: new Set(),
+    idx: 0, km: 0, offRoute: false, lastFix: null, spoken: new Set(), story: null, mode: simulate ? 'sim' : 'gps',
   });
   $('#ride').hidden = false;
   document.body.classList.add('riding');
@@ -151,6 +186,13 @@ async function startRide(simulate) {
   }).addTo(map.m);
   map.m.setView(route.coords[0], 16, { animate: false });
   $('#ride-mode').textContent = simulate ? 'Simulation · fast-forward' : 'GPS';
+  loadVoice();
+  ensureStory(route).then((story) => {
+    if (ride.route !== route || $('#ride').hidden) return;
+    ride.story = story;
+    if (story?.intro && ride.km < 0.5) say(story.intro, { title: 'Your ride' });
+  });
+  api.event({ event: 'ride_start', mode: ride.mode, km: route.distance_km, area: areaOf(route.coords[0]) });
   renderRide(0);
   try {
     ride.wake = await navigator.wakeLock?.request('screen');
@@ -182,7 +224,7 @@ function endRide() {
   ride.watch = null;
   ride.wake?.release?.();
   ride.wake = null;
-  window.speechSynthesis?.cancel();
+  stopVoice();
   if (ride.rider) map.m.removeLayer(ride.rider);
   $('#map-frame').prepend($('#map'));
   $('#ride').hidden = true;
@@ -199,6 +241,6 @@ function wireRide() {
     ride.voice = !ride.voice;
     e.currentTarget.setAttribute('aria-pressed', String(ride.voice));
     e.currentTarget.textContent = ride.voice ? 'Voice on' : 'Voice off';
-    if (!ride.voice) window.speechSynthesis?.cancel();
+    if (!ride.voice) stopVoice();
   });
 }

@@ -26,19 +26,6 @@ function fillForm(req) {
   if (req.bike) setBike(req.bike);
 }
 
-async function planFromForm() {
-  showError(null);
-  setLoading(true);
-  if (isNarrow()) $('#map-frame').scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
-  try {
-    showResult(await api.plan(readForm()));
-  } catch (err) {
-    showError("Couldn't plan that ride", err.message);
-  } finally {
-    setLoading(false);
-  }
-}
-
 async function sendChat(raw) {
   const text = raw.trim();
   if (!text || state.chatBusy) return;
@@ -46,25 +33,41 @@ async function sendChat(raw) {
   state.messages.push({ role: 'user', content: text });
   state.thread.push({ role: 'user', text }, { role: 'thinking' });
   renderThread();
+  setLoading(true, 'Your ride buddy is thinking…');
+  let res;
   try {
-    const res = await api.chat(state.messages);
-    state.thread.pop();
-    state.messages.push({ role: 'assistant', content: res.text });
-    const msg = { role: 'agent', text: res.text };
-    if (res.type === 'plan' && res.result) {
-      msg.result = res.result;
-      fillForm(res.request || {});
-      showResult(res.result);
-    }
-    state.thread.push(msg);
+    res = await api.chat(state.messages);
   } catch (err) {
     state.thread.pop();
     state.messages.pop();
     state.thread.push({ role: 'agent', text: `Something went wrong: ${err.message} Try sending it again.`, error: true });
-  } finally {
     state.chatBusy = false;
     renderThread();
+    return;
+  } finally {
+    setLoading(false);
   }
+  state.thread.pop();
+  state.messages.push({ role: 'assistant', content: res.text });
+  state.thread.push({ role: 'agent', text: res.text });
+  if (res.type === 'plan' && res.result) {
+    state.req = res.request;
+    fillForm(res.request || {});
+    showResult(res.result);
+    setSearched(true);
+    state.thread.push({ role: 'thinking' });
+    renderThread();
+    const picked = await pickBest(res.request, res.result);
+    state.thread.pop();
+    if (picked) {
+      state.messages.push({ role: 'assistant', content: picked.explanation });
+      state.thread.push({ role: 'agent', text: picked.explanation, result: picked });
+    } else {
+      state.thread.push({ role: 'agent', text: "I couldn't pick one this time, but your routes are on the map.", error: true });
+    }
+  }
+  state.chatBusy = false;
+  renderThread();
 }
 
 async function loadWeek(place, delay) {
@@ -83,27 +86,6 @@ function wireUi() {
     $('#pane-chat').hidden = tab.id !== 'tab-chat';
     if (tab.id === 'tab-chat') renderThread();
   }));
-  $('#f-bike').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) setBike(b.dataset.v);
-  });
-  $('#f-priority').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) setPriority(b.dataset.v);
-  });
-  $('#f-locate').addEventListener('click', async () => {
-    state.here = await locate();
-    if (state.here) {
-      $('#f-start').value = MY_LOC;
-      showHere(true);
-    } else {
-      showError('Location is off', 'Allow location for this page (and for your browser in your system settings), or type a town.');
-    }
-  });
-  $('#plan-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    planFromForm();
-  });
   $('#chat-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const input = $('#chat-input');
@@ -149,6 +131,7 @@ async function boot() {
   wireUi();
   wireSearch();
   wireRide();
+  wireLogo();
   wireVoice();
   initMap();
   renderThread();
@@ -160,6 +143,7 @@ async function boot() {
   state.live = await detectApi();
   state.checked = true;
   renderMode();
+  api.event({ event: 'page_view' });
   if (map.paper && !state.live) drawMockGeography();
   if (!state.live) showResult(await mockPlan(readForm(), 0));
 }

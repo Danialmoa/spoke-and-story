@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app import main, usage
+from app import agent, main, tracing, usage
 
 client = TestClient(main.app)
 
@@ -14,5 +14,23 @@ def test_events_are_counted_and_unknown_ones_rejected():
     assert client.post("/api/event", json={"event": "something_else"}).status_code == 422
 
 
+def test_event_area_must_be_rounded_so_exact_positions_and_addresses_never_reach_the_log():
+    for area in ["45.856049,9.394366", "Via Roma 12 Lecco"]:
+        assert client.post("/api/event", json={"event": "page_view", "area": area}).status_code == 422
+
+
 def test_area_is_rounded_to_about_10_km():
     assert usage.area(45.856049, 9.394366) == "45.9,9.4"
+
+
+def test_chat_reply_without_type_or_text_becomes_a_question(monkeypatch):
+    messages = {"messages": [{"role": "user", "content": "hi"}]}
+    monkeypatch.setattr(agent, "chat_step", lambda messages, location: {"text": "Road or gravel?"})
+    assert client.post("/api/chat", json=messages).json() == {"type": "question", "text": "Road or gravel?"}
+    monkeypatch.setattr(agent, "chat_step", lambda messages, location: {})
+    assert client.post("/api/chat", json=messages).json()["type"] == "question"
+
+
+def test_sentry_events_lose_query_strings_and_bodies():
+    event = {"request": {"url": "/api/places", "query_string": "q=Via+Roma+12&near=45.85,9.39", "data": {"start": "x"}}}
+    assert tracing._scrub(event, {}) == {"request": {"url": "/api/places"}}

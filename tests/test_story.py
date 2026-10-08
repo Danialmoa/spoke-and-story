@@ -51,3 +51,19 @@ def test_build_pins_stories_to_route_points_and_drops_broken_turn_lines(monkeypa
     assert [(s["place"], s["text"]) for s in script["stories"]] == [("Midtown", "A story.")]
     assert len(story_calls) == 2
     assert any("Facts about Midtown" in c for c in story_calls)
+
+
+def test_a_failed_lines_call_still_leaves_the_stories(monkeypatch):
+    monkeypatch.setattr(story, "_articles_near", lambda point: ARTICLES)
+    monkeypatch.setattr(story, "_summary", lambda title: "")
+
+    def fake_llm(instructions, content, temperature=0.3):
+        if instructions == agent.LINES_PROMPT:
+            raise ValueError("The model did not answer with JSON")
+        return {"text": "A story."}
+
+    monkeypatch.setattr(agent, "_complete", fake_llm)
+    route = {"coords": _route_north(10), "distance_km": 10.0, "climb_m": 120}
+    script = story.build(PlanRequest(start="Lecco", end="Midtown"), route)
+    assert (script["intro"], script["turn_lines"]) == ("", [])
+    assert len(script["stories"]) == 2

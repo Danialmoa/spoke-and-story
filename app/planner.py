@@ -18,7 +18,8 @@ RANKING = {
 class PlanRequest(BaseModel):
     start: str
     end: str | None = None
-    distance_km: float = Field(50, gt=0, le=200)
+    # ORS round trips are limited to 100 km.
+    distance_km: float = Field(50, gt=0, le=100)
     bike: Literal["road", "gravel", "mtb"] = "road"
     priority: Literal["scenic", "flat", "fast"] = "scenic"
     prefer: list[Preference] = []
@@ -26,7 +27,7 @@ class PlanRequest(BaseModel):
 
 def score(route: dict, req: PlanRequest) -> float:
     """Scenery score in [0, 1], averaged over what the rider asked for (everything if nothing)."""
-    km = route["distance_km"]
+    km = max(route["distance_km"], 0.1)  # start and end can geocode to the same spot
     parts = {
         "water": route["water_km"] / km,
         "forest": route["forest_km"] / km,
@@ -72,5 +73,6 @@ def plan(req: PlanRequest) -> dict:
 
 def pick(req: PlanRequest, routes: list[dict], has_scenery: bool) -> dict:
     result = agent.pick_route(req.model_dump(), routes, has_scenery=has_scenery)
-    explanation = result["text"] if has_scenery else f"{NO_SCENERY_NOTE} {result['text']}"
+    text = result.get("text", "")
+    explanation = text if has_scenery else f"{NO_SCENERY_NOTE} {text}"
     return {"best": result["best"], "explanation": explanation}

@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from itertools import groupby
 from math import cos, radians
 
@@ -5,6 +6,8 @@ import httpx
 import numpy as np
 import shapely
 from shapely.geometry import LineString, Point
+
+from . import tracing
 
 # Public Overpass servers are often overloaded (504/500), so try them in order.
 OVERPASS_URLS = [
@@ -15,6 +18,8 @@ NEAR_M = 150
 VIEW_M = 300
 STEP_M = 100
 EMPTY = {"water_km": 0.0, "forest_km": 0.0, "viewpoints": 0}
+# Scenery is a nice-to-have: past this many seconds the plan goes ahead without it.
+BUDGET_S = 8
 
 
 def _xy(lat, lon, lat0: float):
@@ -40,13 +45,25 @@ def _query(routes: list[list]) -> str:
 def _overpass(query: str) -> list[dict] | None:
     for url in OVERPASS_URLS:
         try:
-            r = httpx.post(url, data={"data": query}, headers={"User-Agent": "SpokeAndStory/0.1"}, timeout=25)
-        except httpx.TransportError:
-            continue
-        # A 200 with a "remark" means the server hit a runtime error and the data is incomplete.
-        if r.status_code == 200 and "remark" not in (data := r.json()):
+            with tracing.span("Overpass scenery"):
+                r = httpx.post(url, data={"data": query}, headers={"User-Agent": "SpokeAndStory/0.1"}, timeout=10)
+            data = r.json() if r.status_code == 200 else None
+        except (httpx.TransportError, ValueError):
+            continue  # unreachable, or an overloaded server's HTML error page instead of JSON
+        # A "remark" means the server hit a runtime error and the data is incomplete.
+        if data is not None and "remark" not in data:
             return data["elements"]
     return None
+
+
+def _overpass_within_budget(query: str) -> list[dict] | None:
+    pool = ThreadPoolExecutor(1)
+    future = pool.submit(_overpass, query)
+    pool.shutdown(wait=False)  # a slow server finishes in the background; the plan doesn't wait for it
+    try:
+        return future.result(timeout=BUDGET_S)
+    except TimeoutError:
+        return None
 
 
 def _category(tags: dict) -> str:
@@ -67,7 +84,8 @@ def _shapes(element: dict, lat0: float) -> list:
             run = list(run)
             if is_point and len(run) >= 2:
                 lines.append(LineString(np.column_stack(_xy([p["lat"] for p in run], [p["lon"] for p in run], lat0))))
-    # Closed rings become areas, so riding through the middle of a forest still counts.
+    # Closed rings become areas, so riding through a forest counts, not just along its edge. A forest whose
+    # outline crosses the query box comes back clipped and can't be closed, so only its edge counts then.
     return lines + list(shapely.polygonize(lines).geoms)
 
 
@@ -90,10 +108,10 @@ def measure(coords: list, shapes: dict, lat0: float) -> dict:
     }
 
 
-def scenery(routes: list[list]) -> list[dict]:
+def scenery(routes: list[list]) -> list[dict] | None:
     """Per route (coords as [lat, lon, ele]): km near water, km near/in forest, viewpoints nearby.
-    None when no Overpass server answered."""
-    elements = _overpass(_query(routes))
+    None when no Overpass server answered within BUDGET_S."""
+    elements = _overpass_within_budget(_query(routes))
     if elements is None:
         return None
     lat0 = routes[0][0][0]

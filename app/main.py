@@ -10,13 +10,15 @@ from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 
-from . import agent, openmeteo, ors, planner, story, usage
+from . import agent, openmeteo, ors, planner, story, tracing, usage
 from .planner import PlanRequest
 
 load_dotenv()
+tracing.init()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 # httpx logs full request URLs at INFO, which include the ORS key, typed addresses and GPS points.
 logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("google_genai").setLevel(logging.WARNING)
 
 app = FastAPI(title="Spoke & Story")
 WEB = Path(__file__).parent.parent / "web"
@@ -47,7 +49,7 @@ class Event(BaseModel):
     """Sent by the page for things only the browser sees. area is already rounded to ~10 km by the page."""
 
     event: Literal["page_view", "ride_start", "ride_finish"]
-    area: str | None = Field(None, max_length=20)
+    area: str | None = Field(None, pattern=r"^-?\d{1,2}\.\d,-?\d{1,3}\.\d$")
     mode: Literal["gps", "sim"] | None = None
     km: float | None = None
 
@@ -63,13 +65,18 @@ def upstream_http(_: Request, exc: httpx.HTTPStatusError):
     return JSONResponse(status_code=502, content={"detail": detail})
 
 
+@app.exception_handler(httpx.TimeoutException)
+def upstream_timeout(_: Request, exc: httpx.TimeoutException):
+    return JSONResponse(status_code=504, content={"detail": f"{exc.request.url.host} took too long to answer."})
+
+
 @app.exception_handler(genai_errors.APIError)
 def upstream_llm(_: Request, exc: genai_errors.APIError):
     return JSONResponse(status_code=502, content={"detail": f"LLM error: {exc}"})
 
 
 @app.get("/api/health")
-def health():
+async def health():
     return {"ok": True}
 
 
@@ -119,10 +126,10 @@ def stats():
 def chat(body: ChatRequest):
     usage.track("chat_message")
     step = agent.chat_step([m.model_dump() for m in body.messages], body.location)
-    if step["type"] == "question":
-        return {"type": "question", "text": step["text"]}
+    if step.get("type") != "plan":
+        return {"type": "question", "text": step.get("text") or "Where would you like to ride?"}
     # The model sometimes sends nulls (e.g. "distance_km": null for an A-to-B ride); let the defaults apply.
-    req = PlanRequest(**{k: v for k, v in step["request"].items() if v is not None})
+    req = PlanRequest(**{k: v for k, v in (step.get("request") or {}).items() if v is not None})
     result = _plan(req, source="chat")
     text = f"I found {len(result['routes'])} routes. Give me a moment to pick the best one for you."
     return {"type": "plan", "text": text, "request": req.model_dump(), "result": result}

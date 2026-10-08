@@ -172,11 +172,15 @@ function showResult(res) {
   state.selected = res.best || res.routes[0].id;
   $('#map-empty').hidden = true;
   $('#ride-actions').hidden = false;
-  $('#pick').hidden = !res.explanation;
-  $('#pick-label').textContent = `Agent's pick · Route ${state.selected}`;
-  $('#pick-text').textContent = res.explanation || '';
+  $('#pick').hidden = false;
+  showPick(res);
   renderCards();
   selectRoute(state.selected, { fit: true });
+}
+
+function showPick(res) {
+  $('#pick-label').textContent = res.explanation ? `Agent's pick · Route ${res.best}` : "Agent's pick";
+  $('#pick-text').textContent = res.explanation || 'Your ride buddy is comparing the routes…';
 }
 
 function showError(title, detail = '') {
@@ -193,6 +197,9 @@ function setLoading(on, text = 'Scouting routes…') {
   $('#loading').hidden = !on;
   $('#loading-text').textContent = text;
   $('#plan-btn').disabled = on;
+  // The game sizes itself from its canvas, so it can only start once the overlay is visible.
+  if (on) BikeGame.start($('#game'));
+  else BikeGame.stop();
 }
 
 function renderMode() {
