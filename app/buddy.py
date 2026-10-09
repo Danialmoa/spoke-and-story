@@ -28,8 +28,9 @@ PROMPT = """You are Spoke & Story's ride buddy: a friendly cycling buddy who pla
 To plan you need a start, a bike ("road", "gravel" or "mtb") and either an end (A to B) or a loop distance_km.
 - start: a town, address or place. Use "here" for the rider's current location when it is known and they name no
   other start.
-- priority: "scenic" (default), "flat" (least climbing) or "fast". Always "flat" when the rider has tired legs or
-  dislikes climbs, now or in what you remember.
+- priority: "scenic" (default), "flat" (least climbing), "fast" or "bike_lanes" (most of the ride on bike paths).
+  Always "flat" when the rider has tired legs or dislikes climbs, now or in what you remember. "bike_lanes" when they
+  want bike lanes or paths, or to stay away from traffic.
 - prefer: any of "water", "forest", "views", "quiet".
 - Fill in what the rider doesn't say this time from what you remember (their bike, priority, likes). What they say
   now wins.
@@ -68,7 +69,7 @@ TOOLS = [
         "function": {
             "name": "plan_routes",
             "description": "Build a few bike routes and return their stats: distance, time, climbing, steepest "
-            "grade, paved and quiet share, scenery.",
+            "grade, paved, quiet and bike path share, scenery.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -76,7 +77,7 @@ TOOLS = [
                     "end": {"type": "string", "description": "Destination; leave out for a loop"},
                     "distance_km": {"type": "number", "description": "Loop length, 5-100 km"},
                     "bike": {"type": "string", "enum": ["road", "gravel", "mtb"]},
-                    "priority": {"type": "string", "enum": ["scenic", "flat", "fast"]},
+                    "priority": {"type": "string", "enum": ["scenic", "flat", "fast", "bike_lanes"]},
                     "prefer": {
                         "type": "array",
                         "items": {"type": "string", "enum": ["water", "forest", "views", "quiet"]},

@@ -4,6 +4,8 @@ import numpy as np
 # Many OSM roads have no surface tag, so only surfaces known to be unpaved count against paved_pct.
 UNPAVED = {2, 8, 9, 10, 11, 12, 13, 15, 16, 17}  # unpaved, gravels, dirt, ground, ice, sand, woodchips, grass
 QUIET = {3, 4, 5, 6}  # street, path, track, cycleway (not state roads or main roads)
+# Only highway=cycleway is a waytype of its own: painted lanes on a road count as that road.
+BIKE_PATH = {6}
 GRADE_WINDOW_M = 200
 
 
@@ -44,6 +46,7 @@ def summarize(feature: dict) -> dict:
         "max_grade_pct": max_grade_pct(dist, ele),
         "paved_pct": 100 - share_pct(extras.get("surface"), UNPAVED),
         "quiet_pct": share_pct(extras.get("waytype"), QUIET),
+        "bike_path_pct": share_pct(extras.get("waytype"), BIKE_PATH),
         "coords": [[round(p[1], 5), round(p[0], 5), round(p[2])] for p in raw],
         "profile": [[round(float(d) / 1000, 2), round(float(e))] for d, e in zip(dist[::step], ele[::step])],
         # index = coordinate where the maneuver happens; type = ORS instruction type (0 left, 1 right, ...).

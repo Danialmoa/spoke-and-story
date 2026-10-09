@@ -102,6 +102,7 @@ const api = {
     ? postJson('/api/brief', { start: req.start, end: req.end, route: { coords: route.coords, distance_km: route.distance_km, duration_min: route.duration_min } })
     : mockBrief(route)),
   forget: (rider) => (state.live ? postJson('/api/rider/forget', { rider }) : Promise.resolve({ ok: true })),
+  voice: () => (state.live ? getJson('/api/voice') : Promise.resolve({ elevenlabs: false })),
   weekly: (place, bike, delay) => (state.live
     ? getJson(`/api/weekly?place=${encodeURIComponent(place)}&bike=${encodeURIComponent(bike)}`)
     : mockWeekly(place, bike, delay)),

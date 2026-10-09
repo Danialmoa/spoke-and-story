@@ -1,5 +1,5 @@
 // The live guide: each chapter rewritten just before its place, fun spots, area stories, speed comments and reroutes.
-// Gemma writes a line in ~2 s but Santa needs 5-15 s to voice it, so lines are asked for about a minute early.
+// Gemma writes a line in ~2 s but Kokoro needs 5-15 s to voice it (ElevenLabs ~1 s), so lines are asked for about a minute early.
 const live = {};
 const spotsCache = new WeakMap();
 // Places are told inside a circle around the place itself, so they work on route, off route and after a reroute.
@@ -9,7 +9,7 @@ const STORY_RADIUS_KM = 0.8;
 const ROUTE_MARGIN_KM = 0.5;
 const SPOT_RADIUS_KM = 0.15;
 const STALE_KM = { story: 1, spot: 0.5 };
-// Santa voices ~2 words a second here (a 70-word chapter takes ~30 s), so the Simulate crawl waits that long at most.
+// Kokoro voices ~2 words a second here (a 70-word chapter takes ~30 s), so the Simulate crawl waits that long at most.
 const LIVE_WAIT_MS = 30000;
 const COMMENT_GAP_MS = 120000;
 const QUIET_NEAR_KM = 0.5;
@@ -89,8 +89,8 @@ function askLive(stop) {
   const line = { text: null, waitFrom: null };
   live.lines.set(stop.key, line);
   const story = stop.type === 'story';
-  // The pre-written chapter goes first: it's the fallback, and live lines must never leave it unvoiced.
-  if (story) prepare(stop.text, { first: true });
+  // With Kokoro the pre-written chapter is voiced first: it's the fallback, and a slow phone must never leave it unvoiced.
+  if (story && voiceAhead()) prepare(stop.text, { first: true });
   rideLog(`asked live line: ${stop.name}`);
   liveLine(story ? 'chapter' : 'spot', { place: stop.name, beat: stop.beat, base: story ? stop.text : stop.note }).then((text) => {
     line.text = text;

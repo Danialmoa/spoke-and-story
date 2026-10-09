@@ -7,7 +7,7 @@ from uuid import UUID
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
@@ -27,9 +27,10 @@ from . import (
     spots,
     story,
     tracing,
+    tts,
     usage,
 )
-from .planner import PlanRequest
+from .planner import PlanRequest, Priority
 
 load_dotenv()
 tracing.init()
@@ -138,7 +139,7 @@ class RerouteRequest(BaseModel):
 
     points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=2, max_length=25)
     bike: Bike = "road"
-    priority: Literal["scenic", "flat", "fast"] = "scenic"
+    priority: Priority = "scenic"
 
 
 class BriefRoute(BaseModel):
@@ -151,6 +152,10 @@ class BriefRequest(BaseModel):
     start: Text
     end: Text | None = None
     route: BriefRoute
+
+
+class SpeakRequest(BaseModel):
+    text: Annotated[str, Field(min_length=1, max_length=tts.MAX_CHARS)]
 
 
 @app.exception_handler(ValueError)
@@ -174,9 +179,26 @@ def upstream_llm(_: Request, exc: genai_errors.APIError):
     return JSONResponse(status_code=502, content={"detail": f"LLM error: {exc}"})
 
 
+@app.exception_handler(tts.Unavailable)
+def voice_unavailable(_: Request, exc: tts.Unavailable):
+    return JSONResponse(status_code=exc.status, content={"detail": str(exc)})
+
+
 @app.get("/api/health")
 async def health():
     return {"ok": True}
+
+
+@app.get("/api/voice")
+def voice():
+    """Lets the page skip ElevenLabs when this server has no key or today's budget is spent."""
+    return {"elevenlabs": tts.available()}
+
+
+@app.post("/api/tts")
+def speak(body: SpeakRequest, request: Request):
+    """Not in limits.LIMITED: a ride voices a line every few minutes and a Kokoro fallback re-voices many. tts has its own caps."""
+    return Response(tts.speak(body.text, limits.client_key(request)), media_type="audio/mpeg")
 
 
 def _track_plan(req: dict, result: dict, source: str) -> None:

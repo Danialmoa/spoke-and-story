@@ -27,10 +27,15 @@ def test_misfit_only_for_loops_far_from_target_distance():
     assert misfit(_route(distance_km=145), PlanRequest(start="Lecco", end="Varenna")) is None
 
 
-def _feature(km: float, climb: float, minutes: float) -> dict:
+def _feature(km: float, climb: float, minutes: float, bike_path: float = 0) -> dict:
+    waytype = {"summary": [{"value": 6, "amount": bike_path}, {"value": 2, "amount": 100 - bike_path}]}
     return {
         "geometry": {"coordinates": [[9.0, 45.0, 200.0], [9.0, 45.001, 200.0 + climb]]},
-        "properties": {"summary": {"distance": km * 1000, "duration": minutes * 60}, "ascent": climb},
+        "properties": {
+            "summary": {"distance": km * 1000, "duration": minutes * 60},
+            "ascent": climb,
+            "extras": {"waytype": waytype},
+        },
     }
 
 
@@ -49,6 +54,21 @@ def test_plan_keeps_loops_closest_to_distance_and_ranks_by_priority(monkeypatch)
 
     fast = planner.plan(PlanRequest(start="Lecco", distance_km=40, priority="fast"))
     assert [r["duration_min"] for r in fast["routes"]] == [120, 140, 150, 90]
+
+
+def test_plan_for_bike_lanes_ranks_by_bike_path_share_then_shorter(monkeypatch):
+    features = [_feature(30, 200, 90, bike_path=5), _feature(34, 200, 100, bike_path=40),
+                _feature(31, 200, 95, bike_path=40)]  # fmt: skip
+    asked = []
+    monkeypatch.setattr(planner.photon, "geocode", lambda place, near=None: {"name": place, "lat": 45.0, "lon": 9.0})
+    monkeypatch.setattr(planner.ors, "a_to_b", lambda start, end, bike, priority: asked.append(priority) or features)
+    monkeypatch.setattr(planner.scenery, "scenery", lambda routes: None)
+
+    result = planner.plan(PlanRequest(start="Lecco", end="Varenna", priority="bike_lanes"))
+    assert [(r["id"], r["distance_km"], r["bike_path_pct"]) for r in result["routes"]] == [
+        ("A", 31.0, 40), ("B", 34.0, 40), ("C", 30.0, 5)
+    ]  # fmt: skip
+    assert asked == ["bike_lanes"]
 
 
 def test_pick_without_scenery_data_hides_the_empty_scenery_numbers(monkeypatch):

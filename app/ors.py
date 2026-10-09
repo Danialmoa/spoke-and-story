@@ -46,8 +46,12 @@ def _directions(
     }
     if options:
         payload["options"] = options
+    profile = PROFILES[bike]
+    if priority == "bike_lanes" and bike == "road":
+        # cycling-road slows cycleways to 8 km/h to keep road bikes off them; cycling-regular prefers them.
+        profile = "cycling-regular"
     with tracing.span("ORS directions"):
-        r = httpx.post(URL.format(profile=PROFILES[bike]), json=payload, headers=_headers(), timeout=timeout)
+        r = httpx.post(URL.format(profile=profile), json=payload, headers=_headers(), timeout=timeout)
     r.raise_for_status()
     return r.json()["features"]
 

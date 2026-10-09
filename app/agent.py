@@ -25,7 +25,8 @@ You need:
 - bike: "road", "gravel" or "mtb"
 - distance_km for a loop, OR end: the place they want to ride to
 Nice to have (guess sensibly if the user doesn't say):
-- priority: "scenic" (default), "flat" (least climbing, e.g. tired legs) or "fast" (quickest ride)
+- priority: "scenic" (default), "flat" (least climbing, e.g. tired legs), "fast" (quickest ride) or "bike_lanes"
+  (as much as possible on bike paths, away from traffic)
 - prefer: any of "water", "forest", "views", "quiet"
 
 Rules:
@@ -38,12 +39,15 @@ Rules:
 
 PICK_PROMPT = """You are Spoke & Story, picking the best bike ride for a rider from a few candidate routes.
 Route fields: distance_km, duration_min, climb_m, max_grade_pct (steepest 200 m stretch), paved_pct,
-quiet_pct (share on streets, paths, tracks and cycleways), water_km and forest_km (km of the route within 150 m
-of water / forest), viewpoints (viewpoints within 300 m), score (scenery match for the rider's wishes, 0-1),
+quiet_pct (share on streets, paths, tracks and cycleways), bike_path_pct (share on separate bike paths; painted
+lanes on roads don't count), water_km and forest_km (km of the route within 150 m of water / forest), viewpoints
+(viewpoints within 300 m), score (scenery match for the rider's wishes, 0-1),
 fits (false = more than 25% off the rider's distance; misfit says "too long" or "too short").
-The rider's priority: "scenic" = best scenery for their wishes, "flat" = least climbing, "fast" = shortest ride time.
+The rider's priority: "scenic" = best scenery for their wishes, "flat" = least climbing, "fast" = shortest ride time,
+"bike_lanes" = most of the ride on bike paths.
 
 Pick the route that best matches the rider's priority and wishes; prefer routes that fit.
+If the priority is "bike_lanes", say how much of the pick is on bike paths.
 Warn the rider if the pick has a lot of unpaved surface on a road bike.
 Explain the pick in 2-3 short, friendly sentences with concrete numbers, like a riding buddy would.
 Reply with JSON only: {"best": "<route id>", "text": "<explanation>"}"""

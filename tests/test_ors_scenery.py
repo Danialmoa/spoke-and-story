@@ -43,6 +43,20 @@ def test_a_to_b_falls_back_to_one_route_when_alternatives_hang(monkeypatch):
     assert ors.a_to_b((45.70, 9.67), (45.85, 9.40), "gravel", "flat") == ["one route"]
 
 
+def test_bike_lanes_on_a_road_bike_uses_the_profile_that_prefers_cycleways(monkeypatch):
+    urls = []
+
+    def post(url, **kwargs):
+        urls.append(url)
+        return httpx.Response(200, json={"features": []}, request=httpx.Request("POST", url))
+
+    monkeypatch.setenv("ORS_API_KEY", "test")
+    monkeypatch.setattr(ors.httpx, "post", post)
+    for bike, priority in [("road", "scenic"), ("road", "bike_lanes"), ("mtb", "bike_lanes")]:
+        ors._directions(bike, priority, {"coordinates": []})
+    assert [url.split("/")[-2] for url in urls] == ["cycling-road", "cycling-regular", "cycling-mountain"]
+
+
 def test_scenery_gives_up_after_its_budget(monkeypatch):
     monkeypatch.setattr(scenery, "BUDGET_S", 0.2)
     monkeypatch.setattr(scenery, "_overpass", lambda query: time.sleep(2))

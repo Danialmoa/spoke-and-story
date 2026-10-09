@@ -47,3 +47,17 @@ def test_geocode_passes_coordinates_through_and_reports_missing_places(monkeypat
     assert photon.geocode("45.1,9.2") == {"name": "45.1,9.2", "lat": 45.1, "lon": 9.2}
     with pytest.raises(ValueError, match="within 200 km"):
         photon.geocode("Nowhere", near=(45.0, 9.0))
+
+
+def test_a_province_never_wins_over_its_town(monkeypatch):
+    def fake_get(url, params, headers, timeout):
+        return _Response(
+            [
+                _feature("Lecco", 45.9005, 9.412, type="county", country="Italy"),
+                _feature("Lecco", 45.8554, 9.3896, type="city", county="Lecco", country="Italy"),
+            ]
+        )
+
+    monkeypatch.setattr(photon.httpx, "get", fake_get)
+    photon._search.cache_clear()
+    assert photon.search("Lecco") == [{"name": "Lecco, Italy", "lat": 45.8554, "lon": 9.3896}]

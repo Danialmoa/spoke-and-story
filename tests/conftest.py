@@ -7,6 +7,7 @@ os.environ["SENTRY_DSN"] = ""
 
 # Tests must never call the real LLMs; Backboard is used whenever this key is set.
 os.environ["BACKBOARD_API_KEY"] = ""
+os.environ["ELEVENLABS_API_KEY"] = ""
 
 
 @pytest.fixture(autouse=True)

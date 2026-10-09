@@ -11,7 +11,11 @@ RANKING = {
     "scenic": lambda r: -r["score"],
     "flat": lambda r: r["climb_m"],
     "fast": lambda r: r["duration_min"],
+    "bike_lanes": lambda r: (-r["bike_path_pct"], r["distance_km"]),
 }
+
+
+Priority = Literal["scenic", "flat", "fast", "bike_lanes"]
 
 
 class PlanRequest(BaseModel):
@@ -20,7 +24,7 @@ class PlanRequest(BaseModel):
     # ORS round trips are limited to 100 km.
     distance_km: float = Field(50, gt=0, le=100)
     bike: Literal["road", "gravel", "mtb"] = "road"
-    priority: Literal["scenic", "flat", "fast"] = "scenic"
+    priority: Priority = "scenic"
     prefer: list[Preference] = []
 
 

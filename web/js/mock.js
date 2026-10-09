@@ -2,11 +2,11 @@
 const MOCK = {
   start: { name: 'Lecco, Italy', lat: 45.856, lon: 9.401 },
   routes: [
-    { id: 'A', water_km: 24.6, forest_km: 8.2, viewpoints: 4, quiet_pct: 54, paved_pct: 98, score: 0.78,
+    { id: 'A', bike_path_pct: 12, water_km: 24.6, forest_km: 8.2, viewpoints: 4, quiet_pct: 54, paved_pct: 98, score: 0.78,
       waypoints: [[45.856, 9.401, 214], [45.872, 9.381, 206], [45.892, 9.351, 204], [45.912, 9.333, 208], [45.936, 9.324, 212], [45.960, 9.309, 206], [45.990, 9.295, 210], [46.012, 9.290, 220], [46.040, 9.288, 202], [46.035, 9.320, 380], [46.022, 9.355, 500], [46.000, 9.385, 470], [45.975, 9.420, 586], [45.952, 9.440, 640], [45.930, 9.428, 723], [45.905, 9.420, 690], [45.880, 9.410, 420]] },
-    { id: 'B', water_km: 13.1, forest_km: 15.4, viewpoints: 2, quiet_pct: 71, paved_pct: 93, score: 0.66,
+    { id: 'B', bike_path_pct: 31, water_km: 13.1, forest_km: 15.4, viewpoints: 2, quiet_pct: 71, paved_pct: 93, score: 0.66,
       waypoints: [[45.856, 9.401, 214], [45.849, 9.376, 215], [45.846, 9.358, 237], [45.830, 9.344, 270], [45.826, 9.322, 228], [45.823, 9.292, 262], [45.820, 9.270, 285], [45.848, 9.272, 390], [45.873, 9.298, 430], [45.900, 9.292, 330], [45.926, 9.284, 215], [45.912, 9.296, 212], [45.893, 9.312, 210], [45.875, 9.334, 212], [45.862, 9.356, 214]] },
-    { id: 'C', water_km: 16.8, forest_km: 12.9, viewpoints: 6, quiet_pct: 63, paved_pct: 97, score: 0.81,
+    { id: 'C', bike_path_pct: 4, water_km: 16.8, forest_km: 12.9, viewpoints: 6, quiet_pct: 63, paved_pct: 97, score: 0.81,
       waypoints: [[45.856, 9.401, 214], [45.875, 9.412, 420], [45.903, 9.421, 690], [45.930, 9.429, 723], [45.946, 9.462, 770], [45.931, 9.488, 890], [45.958, 9.468, 700], [45.982, 9.432, 560], [46.000, 9.390, 480], [46.018, 9.345, 690], [46.040, 9.288, 202], [46.012, 9.290, 220], [45.990, 9.295, 212], [45.960, 9.309, 210], [45.936, 9.324, 205], [45.912, 9.333, 205], [45.892, 9.351, 210], [45.872, 9.381, 212]] },
   ],
   lakes: [
@@ -81,13 +81,19 @@ function mockSteps(coords) {
   return steps;
 }
 
-const RANKING = { scenic: (r) => -r.score, flat: (r) => r.climb_m, fast: (r) => r.duration_min };
+const RANKING = {
+  scenic: (r) => -r.score,
+  flat: (r) => r.climb_m,
+  fast: (r) => r.duration_min,
+  bike_lanes: (r) => -r.bike_path_pct,
+};
 
 function mockExplanation(best, req) {
   const why = {
     scenic: `Route ${best.id} gives you ${best.water_km} km beside the water and ${best.viewpoints} viewpoints.`,
     flat: `Route ${best.id} is the flattest option, with only ${best.climb_m} m of climbing.`,
     fast: `Route ${best.id} is the quickest, about ${fmtDur(best.duration_min)} of riding.`,
+    bike_lanes: `Route ${best.id} has the most bike paths: ${best.bike_path_pct}% of the ride.`,
   }[req.priority];
   const target = req.distance_km || 50;
   const fit = req.end ? `It's ${best.distance_km} km to ${req.end}.`
@@ -115,6 +121,7 @@ async function mockPlan(req, delay = 900) {
       max_grade_pct: +maxGrade.toFixed(1),
       paved_pct: m.paved_pct,
       quiet_pct: m.quiet_pct,
+      bike_path_pct: m.bike_path_pct,
       water_km: m.water_km,
       forest_km: m.forest_km,
       viewpoints: m.viewpoints,
@@ -169,7 +176,8 @@ async function mockChat(messages) {
     end: null,
     distance_km: km ? +km[1] : 50,
     bike: bike[1] === 'mountain' ? 'mtb' : bike[1],
-    priority: /flat|easy|tired|gentle/.test(said) ? 'flat' : /fast|quick|hurry/.test(said) ? 'fast' : 'scenic',
+    priority: /flat|easy|tired|gentle/.test(said) ? 'flat' : /fast|quick|hurry/.test(said) ? 'fast'
+      : /bike (lane|path)|cycleway/.test(said) ? 'bike_lanes' : 'scenic',
     prefer: prefer.length ? prefer : ['water', 'views'],
   };
   const result = await mockPlan(request, 0);

@@ -82,6 +82,7 @@
               <button type="button" data-v="scenic" aria-pressed="true">Scenic</button>
               <button type="button" data-v="flat" aria-pressed="false">Flattest</button>
               <button type="button" data-v="fast" aria-pressed="false">Fastest</button>
+              <button type="button" data-v="bike_lanes" aria-pressed="false">Bike lanes</button>
             </div>
           </div>
           <div class="field" role="group" aria-labelledby="f-bike-label">
@@ -171,7 +172,7 @@
     </div>
   </section>
 
-  <footer class="foot">Built for the DEV Hacktoberfest “Touch Grass” challenge. Routes from OpenStreetMap data, stories from Wikipedia, voice by Kokoro. We count anonymous usage with a rough area (about 10 km), never your exact location. With “Remember me” on, the ride buddy keeps what you tell it about your riding and the place names of your rides (never GPS) under a random ID in your browser. “Forget me” deletes all of it.</footer>
+  <footer class="foot">Built for the DEV Hacktoberfest “Touch Grass” challenge. Routes from OpenStreetMap data, stories from Wikipedia, voice by ElevenLabs or, on your device, Kokoro. Story text (never your position) goes to ElevenLabs to be spoken. We count anonymous usage with a rough area (about 10 km), never your exact location. With “Remember me” on, the ride buddy keeps what you tell it about your riding and the place names of your rides (never GPS) under a random ID in your browser. “Forget me” deletes all of it.</footer>
 </main>
 
 <section class="ride" id="ride" aria-label="Ride mode" hidden>
@@ -198,6 +199,10 @@
       <span class="ride-mode" id="ride-mode">GPS</span>
       <button class="btn btn-ghost btn-small" type="button" id="ride-voice" aria-pressed="true">Voice on</button>
       <button class="btn btn-small" type="button" id="ride-end">End ride</button>
+    </div>
+    <div class="seg voice-pick" id="voice-pick" role="group" aria-label="Santa's voice" hidden>
+      <button type="button" data-v="eleven" aria-pressed="true" title="Fast voice (ElevenLabs)">Fast voice · ElevenLabs</button>
+      <button type="button" data-v="kokoro" aria-pressed="false" title="On-device voice (Kokoro, open source)">On-device · Kokoro</button>
     </div>
     <p class="voice-status" id="voice-status"></p>
     <ol class="ride-log" id="ride-log" hidden></ol>

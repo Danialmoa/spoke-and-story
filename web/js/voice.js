@@ -26,19 +26,28 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAE
 const VOICE_STATUS = {
   idle: '',
   loading: 'Loading Santa, an open-source voice model (~115 MB, first ride only)…',
-  ready: 'Santa (Kokoro, on this device) · tap for the ride log',
   failed: "Kokoro couldn't load here, so you'll hear your browser's voice.",
   blocked: '🔊 Your phone blocked the sound. Tap here to turn on Santa.',
 };
+const ENGINES = { eleven: 'ElevenLabs (fast)', kokoro: 'Kokoro (open source, on this device)' };
+const ENGINE_KEY = 'spoke-voice';
+// A few ElevenLabs requests at a time keeps the server and the account's concurrency limit happy.
+const ELEVEN_AT_ONCE = 3;
 
 const VOICE = 'am_santa';
 
 const voice = {
   status: 'idle',
+  engine: null,
+  elevenOk: null,
+  note: '',
+  offline: false,
   worker: null,
   ready: null,
   todo: [],
   job: null,
+  fetching: 0,
+  fails: 0,
   cache: new Map(),
   made: new Set(),
   player: new Audio(),
@@ -49,12 +58,24 @@ const voice = {
   blocked: false,
 };
 
-// Lines go to the worker one at a time so live lines can jump ahead of the ride's other lines, which are made far in
-// advance. The worker can't reorder them itself: it doesn't read new messages while it's generating.
-function kokoro(message, first = false) {
+function wantedEngine() {
+  try {
+    return localStorage.getItem(ENGINE_KEY) === 'kokoro' ? 'kokoro' : 'eleven';
+  } catch {
+    return 'eleven';
+  }
+}
+
+// Kokoro takes seconds per line, so it starts on a route's lines as soon as they're written. ElevenLabs costs per
+// character and needs ~1 s, so it waits for the ride to start: riders often look at several routes first.
+const voiceAhead = () => voice.engine === 'kokoro';
+
+// Lines wait in one queue whatever the engine, so live lines can jump ahead of the ride's other lines (made far in
+// advance) and lines still waiting simply go to Kokoro after a fallback.
+function makeAudio(text, first = false) {
   return new Promise((resolve, reject) => {
-    enqueue({ message, first, resolve, reject });
-    nextKokoro();
+    enqueue({ message: { text, voice: VOICE }, first, resolve, reject });
+    nextLine();
   });
 }
 
@@ -71,13 +92,64 @@ function hurry(text) {
   enqueue({ ...job, first: true });
 }
 
-function nextKokoro() {
-  if (voice.job || !voice.todo.length) return;
-  voice.job = voice.todo.shift();
-  voice.worker.postMessage(voice.job.message);
+// Kokoro's worker gets one line at a time: it can't run two generations at once, nor reorder what it was sent.
+function nextLine() {
+  if (voice.engine === 'eleven') {
+    while (voice.fetching < ELEVEN_AT_ONCE && voice.todo.length) fetchLine(voice.todo.shift());
+  } else if (!voice.job && voice.todo.length) {
+    voice.job = voice.todo.shift();
+    voice.worker.postMessage(voice.job.message);
+  }
+}
+
+async function fetchLine(job) {
+  voice.fetching += 1;
+  try {
+    const res = await fetch('/api/tts', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: job.message.text }), signal: AbortSignal.timeout(20000),
+    });
+    if (res.ok) {
+      job.resolve(await res.blob());
+      voice.offline = false;
+      voice.fails = 0;
+    } else {
+      const { detail } = await res.json().catch(() => ({}));
+      const reason = typeof detail === 'string' ? detail : `The voice server answered ${res.status}.`;
+      // Switching to Kokoro means a 115 MB download, maybe on mobile data: only when ElevenLabs is really out (no key,
+      // budget spent, or failing again and again). A single bad line or hiccup just skips that line.
+      if (res.status === 429 || res.status === 503 || (res.status !== 422 && ++voice.fails >= 3)) {
+        fallBack(reason);
+        if (voice.status === 'failed') job.resolve(null);
+        else enqueue(job);
+      } else {
+        rideLog(`voice skipped one line: ${reason}`);
+        job.resolve(null);
+      }
+    }
+  } catch {
+    // No signal, e.g. in a tunnel: Kokoro's download would fail too. The line is asked for again when it's needed.
+    if (!voice.offline) rideLog('ElevenLabs out of reach (no signal?), lines are tried again when needed');
+    voice.offline = true;
+    if (voice.engine === 'eleven') voice.cache.delete(job.message.text);
+    job.resolve(null);
+  } finally {
+    voice.fetching -= 1;
+    nextLine();
+  }
+}
+
+function fallBack(reason) {
+  if (voice.engine !== 'eleven') return;
+  rideLog(`${reason} Switching to Kokoro.`);
+  voice.note = 'ElevenLabs unavailable, switched to Kokoro. ';
+  startKokoro();
+  // Kokoro is slow on phones, so the rest of the ride is voiced ahead again, as when the rider picks it.
+  if (ride.story && !$('#ride').hidden) prepareRide(ride.planned, ride.story, ride.km);
 }
 
 function failVoice() {
+  // Kokoro failing to load after the rider switched back to ElevenLabs changes nothing.
+  if (voice.engine !== 'kokoro') return;
   voice.status = 'failed';
   [voice.job, ...voice.todo].forEach((job) => job?.reject(new Error('Kokoro is not available')));
   voice.job = null;
@@ -85,45 +157,97 @@ function failVoice() {
   renderVoiceStatus();
 }
 
-function loadVoice() {
+function useEleven() {
+  voice.engine = 'eleven';
+  voice.status = 'ready';
+  voice.ready = Promise.resolve();
+  renderVoiceStatus();
+  nextLine();
+}
+
+// Kokoro (~115 MB) is downloaded only when it's chosen or needed as the fallback.
+function startKokoro() {
+  voice.engine = 'kokoro';
   if (!voice.worker) {
     try {
       voice.worker = new Worker(URL.createObjectURL(new Blob([KOKORO_WORKER], { type: 'text/javascript' })), { type: 'module' });
     } catch {
       failVoice();
-      return;
+      voice.ready = Promise.resolve();
+      return voice.ready;
     }
     voice.worker.onmessage = ({ data }) => {
       const { job } = voice;
       voice.job = null;
       if (data.error) job?.reject(new Error(data.error));
       else job?.resolve(data.blob ?? true);
-      nextKokoro();
+      nextLine();
     };
     voice.worker.onerror = failVoice;
-    voice.status = 'loading';
-    voice.ready = kokoro({}).then(() => {
-      voice.status = 'ready';
-      renderVoiceStatus();
-    }, failVoice);
+  }
+  voice.status = 'loading';
+  // The empty warm-up line goes ahead of every waiting line: it resolves once the model has loaded.
+  voice.ready = new Promise((resolve, reject) => {
+    voice.todo.unshift({ message: {}, first: true, resolve, reject });
+    nextLine();
+  }).then(() => {
+    voice.status = 'ready';
+    renderVoiceStatus();
+  }, failVoice);
+  renderVoiceStatus();
+  return voice.ready;
+}
+
+function loadVoice() {
+  if (!voice.ready) {
+    voice.ready = api.voice().then((r) => r.elevenlabs === true, () => false).then((ok) => {
+      voice.elevenOk = ok;
+      return ok && wantedEngine() === 'eleven' ? useEleven() : startKokoro();
+    });
   }
   renderVoiceStatus();
 }
 
-function renderVoiceStatus() {
-  const el = $('#voice-status');
-  const made = voice.status === 'ready' ? ` · ${voice.made.size} lines ready` : '';
-  el.textContent = voice.blocked ? VOICE_STATUS.blocked : VOICE_STATUS[voice.status] + made;
-  el.classList.toggle('is-blocked', voice.blocked);
+// The rider's pick. Lines already made are made again in the new voice, so one ride doesn't switch back and forth.
+function chooseVoice(engine) {
+  try {
+    localStorage.setItem(ENGINE_KEY, engine);
+  } catch {
+    // Private mode: the pick lasts this visit.
+  }
+  if (engine === voice.engine) return;
+  voice.todo.forEach((job) => job.resolve(null));
+  voice.todo = [];
+  voice.cache = new Map();
+  voice.made = new Set();
+  voice.note = '';
+  rideLog(`voice switched to ${ENGINES[engine]}`);
+  if (engine === 'kokoro') startKokoro();
+  else useEleven();
+  if (ride.story && !$('#ride').hidden) prepareRide(ride.planned, ride.story, ride.km);
 }
 
-// Lines wait for Santa to finish loading instead of being skipped, so they can be queued as soon as the story is here.
+function renderVoiceStatus() {
+  const el = $('#voice-status');
+  const text = voice.status === 'ready'
+    ? `Voice: ${ENGINES[voice.engine]} · tap for the ride log · ${voice.made.size} lines ready`
+    : VOICE_STATUS[voice.status];
+  el.textContent = voice.blocked ? VOICE_STATUS.blocked : voice.note + text;
+  el.classList.toggle('is-blocked', voice.blocked);
+  $('#voice-pick').hidden = !voice.elevenOk;
+  $$('#voice-pick button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === (voice.engine || wantedEngine()))));
+}
+
+// Lines wait for the voice to be ready instead of being skipped, so they can be queued as soon as the story is here.
 function prepare(text, { first = false } = {}) {
   if (!text || !voice.ready || voice.status === 'failed') return null;
   if (!voice.cache.has(text)) {
-    const audio = voice.ready.then(() => (voice.status === 'ready' ? kokoro({ text, voice: VOICE }, first) : null));
-    voice.cache.set(text, audio.then((blob) => {
-      if (!blob) return null;
+    const { cache } = voice;
+    // A line queued for the voice the rider switched away from must not be made (and paid for) after the switch.
+    const audio = voice.ready.then(() => (voice.status === 'ready' && cache === voice.cache ? makeAudio(text, first) : null));
+    cache.set(text, audio.then((blob) => {
+      // Made for the voice the rider just switched away from.
+      if (!blob || cache !== voice.cache) return null;
       voice.made.add(text);
       renderVoiceStatus();
       return URL.createObjectURL(blob);

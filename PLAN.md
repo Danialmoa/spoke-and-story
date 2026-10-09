@@ -119,6 +119,13 @@ Gemma answers in ~2-3 s, so the guide reacts **while riding** (`/api/live`, `/ap
       when the rider enters a circle around the place (≥ 0.8 km), on or off route; area stories about where the rider
       is after ~8 quiet minutes (`/api/area`); reroutes at most every 2 min, A→B straight to the destination.
 - ORS hung for minutes on gravel + flat with alternatives: alternatives get 15 s, then one route.
+- [x] **ElevenLabs voice** (9 Oct evening; DEV partner category "give an open-source agent a voice"): default voice via
+      `/api/tts` (Flash v2.5, "George", ~1 s a line), only the intro made ahead, the rest on demand. Caps: 10k chars/day,
+      6k/hour per visitor, charged before the call. Kokoro is the fallback (no key, budget spent, repeated errors) and an
+      "On-device" switch. Set a Credit quota on the key in ElevenLabs (in-memory caps restart on deploy).
+- [x] **Bike lanes** priority + "Bike paths %" on cards (only separate cycleways are measurable in ORS).
+- [x] Photon skips province/region results: "Lecco" had landed 5 km up the mountain (likely the crazy Lecco loops).
+- [x] Ride log on the phone (tap the voice status), area stories after 2.5 quiet min, a place every ~2 km, quick reroutes.
 
 ### 2. Launch plan (Friday)
 

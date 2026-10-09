@@ -50,3 +50,23 @@ def test_summarize_converts_ors_feature():
     assert (route["paved_pct"], route["quiet_pct"]) == (80, 60)
     assert route["profile"][-1][0] == 0.2
     assert route["steps"][1] == {"index": 1, "type": 0, "text": "Turn left onto Via Roma"}
+
+
+def test_bike_path_share_counts_only_cycleways():
+    feature = {
+        "geometry": {"coordinates": [[9.0, 45.0, 200.0], [9.0, 45.0009, 200.0]]},
+        "properties": {
+            "summary": {"distance": 100.0, "duration": 30.0},
+            "extras": {
+                "waytype": {
+                    "summary": [
+                        {"value": 3, "amount": 30.0},
+                        {"value": 6, "amount": 25.4},
+                        {"value": 2, "amount": 44.6},
+                    ]
+                }
+            },
+        },
+    }
+    route = route_stats.summarize(feature)
+    assert (route["bike_path_pct"], route["quiet_pct"]) == (25, 55)

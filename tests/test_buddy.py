@@ -79,6 +79,22 @@ def test_buddy_plans_from_here_and_the_position_never_reaches_backboard(backboar
     assert "remember" not in {t["function"]["name"] for t in sent[0]["tools"]}
 
 
+def test_buddy_can_plan_for_bike_lanes(backboard, monkeypatch):
+    sent, replies = backboard
+    replies += [
+        _needs(_call("plan_routes", start="Lecco", end="Varenna", bike="road", priority="bike_lanes")),
+        _done('{"best": "A", "text": "A has the most bike paths."}'),
+    ]
+    planned = []
+    monkeypatch.setattr(planner, "plan", lambda req: planned.append(req) or _result())
+
+    buddy.reply([{"role": "user", "content": "To Varenna on bike lanes please"}])
+
+    plan_routes = next(t for t in sent[0]["tools"] if t["function"]["name"] == "plan_routes")
+    assert "bike_lanes" in plan_routes["function"]["parameters"]["properties"]["priority"]["enum"]
+    assert planned[0].priority == "bike_lanes"
+
+
 def test_buddy_remembers_only_new_facts_for_a_rider(backboard, monkeypatch):
     sent, replies = backboard
     replies += [

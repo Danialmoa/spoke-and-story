@@ -15,12 +15,14 @@ Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge: open-source AI tha
   It asks at most two questions, then plans the ride.
 - **Ride mode:** "Start ride" follows your GPS ("Simulate" fast-forwards, handy at home). You get the real turns only,
   bike-computer stats and an off-route warning. Santa tells a story built from Wikipedia facts about the places along
-  the route, in his own voice.
+  the route, in his own voice: ElevenLabs by default (about a second a line), or Kokoro, an open-source voice that
+  runs on your phone (a switch in ride mode).
 - **Live guide (coming this week):** chapters written just before each place, comments on your speed, a new route
   when you go off course, and fun stops (old cafés, gelato, historic spots) as you pass them.
 
-**First ride:** your browser downloads the Kokoro voice model once: about 92 MB (`Kokoro-82M-v1.0-ONNX`, q8) plus
-about 22 MB for the ONNX runtime, so roughly 115 MB. Use Wi-Fi for that one. After that it's cached.
+**On-device voice:** if you pick Kokoro (or ElevenLabs isn't available), your browser downloads the voice model
+once: about 92 MB (`Kokoro-82M-v1.0-ONNX`, q8) plus about 22 MB for the ONNX runtime, so roughly 115 MB. Use Wi-Fi
+for that one. After that it's cached.
 
 ## How it works
 
@@ -33,11 +35,24 @@ about 22 MB for the ONNX runtime, so roughly 115 MB. Use Wi-Fi for that one. Aft
 | Ranking | Scenic / Flattest / Fastest, loops within 25% of the asked distance | `app/planner.py` |
 | LLM (pick, chat, story) | **Gemma 4 26B-A4B** through Backboard (~2 s). Google AI Studio is the fallback | `app/agent.py` |
 | Story places | **Wikipedia** places near the route, with their summaries | `app/story.py` |
-| Voice | **Kokoro-82M** (Santa voice), running in your browser in a web worker | `web/js/voice.js` |
+| Voice | **ElevenLabs** Flash v2.5 on the server (~1 s a line). **Kokoro-82M** in your browser as the open-source option and fallback | `app/tts.py`, `web/js/voice.js` |
 | Map | **Leaflet** with OpenStreetMap tiles, Esri satellite view | `web/js/map.js` |
 | Ride, turns, narration | | `web/js/ride.js` |
 
 The backend is a small FastAPI app. The page is plain HTML and JavaScript, no build step.
+
+### Voice
+
+Gemma, the open model, writes the guide; ElevenLabs gives it a voice. `POST /api/tts` turns one line into an mp3
+(Flash v2.5, voice "George", a warm storyteller). A line takes about a second, so only the intro is made when the
+ride starts; every other line is made as it comes up, and a ride pays only for what is said. Kokoro, the open-source
+voice that runs in your browser, takes over when the server has no key, the day's budget is spent, ElevenLabs keeps
+failing, or you pick "On-device" in ride mode; Kokoro then voices the rest of the ride ahead, as it's slow on phones.
+A line missed without signal (a tunnel) is skipped, apart from turns, which are asked for again.
+
+The key stays on the server. Costs are capped there: 800 characters a line, `ELEVENLABS_DAILY_CHARS` a day for
+everyone together (default 10,000) and 6,000 an hour per visitor. The server keeps the last 200 lines in memory, so
+the same line is paid once. `GET /api/voice` tells the page whether ElevenLabs is available.
 
 ## Run locally
 
@@ -65,6 +80,9 @@ Tests and lint: `pip install pytest ruff && python -m pytest -q && ruff check .`
 | `GEMINI_API_KEY` | yes | [Google AI Studio](https://aistudio.google.com/apikey): the fallback (or only) Gemma host, ~20-40 s |
 | `LLM_MODEL` | no | Default `gemma-4-26b-a4b-it` |
 | `SENTRY_DSN` | no | Tracing. Empty = off |
+| `ELEVENLABS_API_KEY` | recommended | The fast voice. A restricted key with "Text to Speech" access is enough. Empty = Kokoro only |
+| `ELEVENLABS_VOICE_ID` | no | Default `JBFqnCBsd6RMkjVDRZzb` (George) |
+| `ELEVENLABS_DAILY_CHARS` | no | Characters a day for all visitors together. Default 10000 |
 
 ## Deploy on Render
 
@@ -73,7 +91,7 @@ wake up), Python 3.12.8, health check on `/api/health`.
 
 1. Push the repo to GitHub.
 2. In Render: **New > Blueprint**, pick the repo, and paste the secret values when asked (`ORS_API_KEY`,
-   `GEMINI_API_KEY`, `BACKBOARD_API_KEY`, and `SENTRY_DSN` if you use Sentry).
+   `GEMINI_API_KEY`, `BACKBOARD_API_KEY`, `ELEVENLABS_API_KEY`, and `SENTRY_DSN` if you use Sentry).
 3. Open the `.onrender.com` URL. Phones only share GPS with `https://` pages, which Render gives you.
 
 The start command uses `--no-access-log` on purpose: search text and GPS points travel in query strings.
@@ -90,15 +108,17 @@ The start command uses `--no-access-log` on purpose: search text and GPS points 
   "loves lake views"...) and, after each ride, the place names of your start, destination and the story places you
   heard, with a one-line gist of each story. Never GPS positions or your IP. "What I remember about you" shows all of
   it, and **Forget me** deletes all of it from Backboard and drops the ID from your browser.
-- The voice runs on your device. If Sentry is on, it gets timings and token counts, never prompts, query strings or
-  request bodies.
+- With the fast voice (the default), the words Santa says go to ElevenLabs to be spoken. That's story text only, never
+  your position. Kokoro, the on-device voice, sends nothing.
+- If Sentry is on, it gets timings and token counts, never prompts, query strings or request bodies.
 
 ## Credits and licenses
 
 The code is MIT licensed, see [LICENSE](LICENSE). It stands on these open models, data and services:
 
 - [Gemma 4](https://ai.google.dev/gemma) by Google: open weights, [Apache 2.0](https://ai.google.dev/gemma/apache_2).
-- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad: Apache 2.0. The
+- [ElevenLabs](https://elevenlabs.io) gives the open agent its voice (Flash v2.5, voice "George").
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) by hexgrad, the open on-device voice: Apache 2.0. The
   [ONNX build](https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX) runs in the browser with
   [kokoro-js](https://github.com/hexgrad/kokoro) and Transformers.js (Apache 2.0).
 - Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), under the ODbL.

@@ -10,7 +10,7 @@ function ensureBrief(route) {
     briefs.set(route, brief);
     brief.then((b) => {
       briefsDone.set(route, b);
-      if (b?.spoken) prepare(b.spoken);
+      if (b?.spoken && voiceAhead()) prepare(b.spoken);
       if (route === currentRoute()) renderBrief(b);
     });
   }

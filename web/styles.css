@@ -21,6 +21,7 @@
   --views: #B9822A;
   --quiet: #7D6A8E;
   --paved: #66726D;
+  --bike: #2E8B78;
   --rain-hatch: rgba(79, 127, 158, .17);
   --warn: #B4472F;
   --lcd-bg: #22332E;
@@ -44,7 +45,7 @@
     --muted: #9BB0A6; --grid: rgba(232, 240, 234, .14); --header: #2E4A42; --header-ink: #F6F0E2;
     --road: #0A0F0D; --road-dash: #E8F0EA; --coral: #E58174; --coral-ink: #F2A397; --coral-soft: #4A2A26;
     --on-coral: #17241F; --sel-bg: #22322C; --water: #82AECB; --forest: #97B87A; --views: #E2B455;
-    --quiet: #B6A0CB; --paved: #A9B7B0; --rain-hatch: rgba(130, 174, 203, .2); --warn: #F08A6E;
+    --quiet: #B6A0CB; --paved: #A9B7B0; --bike: #6CC6B0; --rain-hatch: rgba(130, 174, 203, .2); --warn: #F08A6E;
     --lcd-bg: #101A17; --lcd-ink: #D4ECB4; --lcd-dim: #6F8C72;
     --map-paper: #1A1F1D; --map-ink: #D5E3DA; --map-water: #22333A; --map-shore: #3F5B65; --map-water-ink: #8FB3C4;
     --contour: rgba(232, 240, 234, .05);
@@ -57,7 +58,7 @@
   --muted: #9BB0A6; --grid: rgba(232, 240, 234, .14); --header: #2E4A42; --header-ink: #F6F0E2;
   --road: #0A0F0D; --road-dash: #E8F0EA; --coral: #E58174; --coral-ink: #F2A397; --coral-soft: #4A2A26;
   --on-coral: #17241F; --sel-bg: #22322C; --water: #82AECB; --forest: #97B87A; --views: #E2B455;
-  --quiet: #B6A0CB; --paved: #A9B7B0; --rain-hatch: rgba(130, 174, 203, .2); --warn: #F08A6E;
+  --quiet: #B6A0CB; --paved: #A9B7B0; --bike: #6CC6B0; --rain-hatch: rgba(130, 174, 203, .2); --warn: #F08A6E;
   --lcd-bg: #101A17; --lcd-ink: #D4ECB4; --lcd-dim: #6F8C72;
   --map-paper: #1A1F1D; --map-ink: #D5E3DA; --map-water: #22333A; --map-shore: #3F5B65; --map-water-ink: #8FB3C4;
   --contour: rgba(232, 240, 234, .05);
@@ -155,7 +156,7 @@ button, input { font: inherit; color: inherit; }
 .row .input { flex: 1; min-width: 0; }
 
 
-.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--shadow); }
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--shadow); }
 .seg button { appearance: none; border: 0; background: var(--paper); padding: 10px 6px; font: 700 13px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
 .seg button + button { border-left: 2px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--card); }
@@ -387,5 +388,7 @@ body.riding { overflow: hidden; }
 .ride-story.is-min b { margin-bottom: 0; line-height: 24px; }
 .ride-story b { display: block; margin-bottom: 4px; font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--coral-ink); }
 .voice-status { margin: 0; font-size: 11px; color: var(--muted); cursor: pointer; }
+.voice-pick { box-shadow: 2px 2px 0 var(--shadow); }
+.voice-pick button { padding: 7px 6px; font-size: 10px; line-height: 1.2; letter-spacing: .04em; }
 .ride-log { max-height: 40vh; overflow: auto; margin: 6px 0 0; padding-left: 18px; font: 11px/1.45 var(--mono); color: var(--ink); }
 .voice-status.is-blocked { font-size: 14px; font-weight: 700; color: var(--coral-ink); cursor: pointer; }

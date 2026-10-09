@@ -64,6 +64,7 @@ function routeCard(r, { best = false, selected = false, compact = false, chatInd
         ${bar('Water', r.water_km, r.distance_km, `${r.water_km} km`, 'water')}
         ${bar('Forest', r.forest_km, r.distance_km, `${r.forest_km} km`, 'forest')}
         ${bar('Quiet roads', r.quiet_pct, 100, `${r.quiet_pct}%`, 'quiet')}
+        ${bar('Bike paths', r.bike_path_pct, 100, `${r.bike_path_pct}%`, 'bike')}
         ${bar('Paved', r.paved_pct, 100, `${r.paved_pct}%`, 'paved')}
         <div class="bar-row"><dt>Viewpoints</dt><dd class="dots">${'●'.repeat(views)}${'○'.repeat(5 - views)}</dd><dd class="val">${r.viewpoints}</dd></div>
       </dl>`}

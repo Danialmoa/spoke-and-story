@@ -69,9 +69,10 @@ function ensureStory(route) {
   ensureSpots(route);
   ensureBrief(route);
   if (!stories.has(route)) {
+    loadVoice();
     const story = api.story(state.req || readForm(), route).catch(() => null);
     stories.set(route, story);
-    story.then((s) => route === currentRoute() && prepareRide(route, s));
+    story.then((s) => route === currentRoute() && voiceAhead() && prepareRide(route, s));
   }
   return stories.get(route);
 }
@@ -123,8 +124,8 @@ function narrate(next, done, left) {
   }
 }
 
-// Santa takes seconds per line, so the whole ride's lines are made in the background, in route order, as soon as
-// the story is written, usually before the ride starts. Same text = same cached audio once riding.
+// The whole ride's lines are made in the background, in route order: with Kokoro as soon as the story is written,
+// usually before the ride starts (see voiceAhead); with ElevenLabs when the ride starts. Same text = same cached audio.
 function prepareRide(route, story, fromKm = 0) {
   if (!story) return;
   loadVoice();
@@ -134,6 +135,8 @@ function prepareRide(route, story, fromKm = 0) {
   for (const s of story.stories) lines.push([kms[Math.min(s.index, kms.length - 1)], s.text]);
   // The intro is said first, so it is made first: on a phone, waiting behind other lines meant a silent start.
   prepare(story.intro, { first: true });
+  // ElevenLabs voices a line in about a second, so it only voices lines as they come up: a ride pays for what is said.
+  if (!voiceAhead()) return;
   lines.sort((a, b) => a[0] - b[0]).forEach(([km, text]) => km >= fromKm && prepare(text));
   prepare(story.finish);
 }
@@ -242,6 +245,7 @@ async function startRide(simulate) {
   map.m.setView(here, 16, { animate: false });
   $('#ride-mode').textContent = simulate ? 'Simulation · fast-forward' : 'GPS';
   loadVoice();
+  voice.ready.then(() => rideLog(`voice: ${voice.status === 'failed' ? "the browser's" : ENGINES[voice.engine]}`));
   showSubtitle(WAITING);
   setTimeout(() => {
     if (ride.planned !== route || !ride.storyWait) return;
@@ -336,6 +340,10 @@ function wireRide() {
     voice.blocked = false;
     unlockAudio();
     renderVoiceStatus();
+  });
+  $('#voice-pick').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) chooseVoice(b.dataset.v);
   });
   $('#ride-voice').addEventListener('click', (e) => {
     ride.voice = !ride.voice;

@@ -10,6 +10,9 @@ from .ors import straight_km
 URL = "https://photon.komoot.io/api/"
 USER_AGENT = "SpokeAndStory/0.1 (DEV Hacktoberfest project; https://dev.to/challenges/hf26)"
 NEAR_KM = 200
+# A province or region comes first for many town names, and its point is a centroid: "Lecco" landed 5 km up the
+# mountain. They're never a real start or destination.
+AREAS = {"county", "state", "country"}
 
 
 def _label(p: dict) -> str:
@@ -28,6 +31,8 @@ def _search(text: str, near: tuple[float, float] | None, size: int) -> tuple[dic
     r.raise_for_status()
     results = {}
     for f in r.json()["features"]:
+        if f["properties"].get("type") in AREAS:
+            continue
         lon, lat = f["geometry"]["coordinates"]
         name = _label(f["properties"])
         # One village comes back as several OSM objects (node, boundary...); keep the first of each name.
