@@ -6,7 +6,7 @@ Bike route planner with a funny storytelling ride guide. Built for the **DEV Hac
 - **Deadline: Sunday 11 Oct 2026.** Winners the week of 12 Oct.
 - Submit one DEV post with tags `#devchallenge #hf26challenge` and the submission template. Writing quality counts most.
 - Bonus points for taking it outside and telling how it went.
-- Last updated: 9 Oct 2026, ~00:30. **Live at https://spoke-and-story.onrender.com** (Render Starter, Oregon).
+- Last updated: 9 Oct 2026, ~00:30. **Live at https://spoke-and-story.tech** (Render Starter, Oregon; also spoke-and-story.onrender.com).
   Code: private repo https://github.com/Danialmoa/spoke-and-story (make it public before the DEV post).
 
 ## Where we are
@@ -130,8 +130,8 @@ Rate limit checked live: 429 after 30 calls; a faked `X-Forwarded-For` is caught
 - [ ] Sentry (recommended, ~10 min): free personal account → FastAPI project → DSN into `.env` and Render.
       Screenshots for the post: `/api/story` trace (outline, then chapters in parallel), `/api/plan` (Photon → ORS →
       Overpass), the AI/LLM view (Gemma tokens and latency), `/api/live`.
-- [ ] Domain `spoke-and-story.tech` (bought 9 Oct at name.store, DNS at orderbox-dns). In `render.yaml` `domains`.
-      At the registrar: `A @ 216.24.57.1` and `CNAME www → spoke-and-story.onrender.com`; then Verify on Render.
+- [x] Domain **https://spoke-and-story.tech** live 9 Oct (name.store, DNS at orderbox: `A @ 216.24.57.1`,
+      `CNAME www → spoke-and-story.onrender.com`; www and http redirect to https). In `render.yaml` `domains`.
 - [ ] Check the Render logs once: no request URLs, no tracebacks. Ride buddy chat on the live site.
 - [ ] Clean-up: delete the 5 leftover Backboard "Default Assistant"s. Rename the folder if wanted.
 
