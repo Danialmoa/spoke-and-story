@@ -131,7 +131,8 @@ function prepareRide(route, story, fromKm = 0) {
   const steps = keyTurns(route, kms);
   const lines = steps.map((step) => [kms[step.index], turnLine(step, steps, story)]);
   for (const s of story.stories) lines.push([kms[Math.min(s.index, kms.length - 1)], s.text]);
-  prepare(story.intro);
+  // The intro is said first, so it is made first: on a phone, waiting behind other lines meant a silent start.
+  prepare(story.intro, { first: true });
   lines.sort((a, b) => a[0] - b[0]).forEach(([km, text]) => km >= fromKm && prepare(text));
   prepare(story.finish);
 }
