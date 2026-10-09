@@ -21,12 +21,14 @@ self.onmessage = ({ data }) => {
   chain = chain.then(() => handle(data));
 };
 `;
-const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+// 0.1 s of real silence: iOS ignored an empty clip, so the tap never unlocked sound and Santa stayed silent.
+const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
 const VOICE_STATUS = {
   idle: '',
-  loading: "Loading Kokoro, an open-source voice model (~115 MB, first ride only)… you'll hear the browser voice until it's ready.",
+  loading: 'Loading Santa, an open-source voice model (~115 MB, first ride only)…',
   ready: 'Voice: Santa (Kokoro, running on this device)',
   failed: "Kokoro couldn't load here, so you'll hear your browser's voice.",
+  blocked: '🔊 Your phone blocked the sound. Tap here to turn on Santa.',
 };
 
 const VOICE = 'am_santa';
@@ -44,6 +46,7 @@ const voice = {
   busy: false,
   stop: null,
   session: 0,
+  blocked: false,
 };
 
 // Lines go to the worker one at a time so live lines can jump ahead of the ride's other lines, which are made far in
@@ -108,7 +111,10 @@ function loadVoice() {
 }
 
 function renderVoiceStatus() {
-  $('#voice-status').textContent = VOICE_STATUS[voice.status];
+  const el = $('#voice-status');
+  const made = voice.status === 'ready' ? ` · ${voice.made.size} lines ready` : '';
+  el.textContent = voice.blocked ? VOICE_STATUS.blocked : VOICE_STATUS[voice.status] + made;
+  el.classList.toggle('is-blocked', voice.blocked);
 }
 
 // Lines wait for Santa to finish loading instead of being skipped, so they can be queued as soon as the story is here.
@@ -119,6 +125,7 @@ function prepare(text, { first = false } = {}) {
     voice.cache.set(text, audio.then((blob) => {
       if (!blob) return null;
       voice.made.add(text);
+      renderVoiceStatus();
       return URL.createObjectURL(blob);
     }, () => null));
   } else if (first) {
@@ -183,7 +190,13 @@ function playUrl(url) {
     voice.player.onended = resolve;
     voice.player.onerror = resolve;
     voice.player.src = url;
-    voice.player.play().catch(resolve);
+    voice.player.play().catch((err) => {
+      if (err.name === 'NotAllowedError') {
+        voice.blocked = true;
+        renderVoiceStatus();
+      }
+      resolve();
+    });
   });
 }
 

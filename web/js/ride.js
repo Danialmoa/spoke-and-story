@@ -300,6 +300,12 @@ function wireRide() {
   $('#ride-start').addEventListener('click', () => startRide(false));
   $('#ride-sim').addEventListener('click', () => startRide(true));
   $('#ride-end').addEventListener('click', endRide);
+  $('#voice-status').addEventListener('click', () => {
+    if (!voice.blocked) return;
+    voice.blocked = false;
+    unlockAudio();
+    renderVoiceStatus();
+  });
   $('#ride-voice').addEventListener('click', (e) => {
     ride.voice = !ride.voice;
     e.currentTarget.setAttribute('aria-pressed', String(ride.voice));
