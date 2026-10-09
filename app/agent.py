@@ -232,13 +232,17 @@ def chat_step(messages: list[dict], location: str | None = None) -> dict:
 
 
 def pick_route(request: dict, routes: list[dict], has_scenery: bool = True) -> dict:
-    stats = [{k: v for k, v in r.items() if k not in ("coords", "profile", "steps")} for r in routes]
+    hidden = {"coords", "profile", "steps"}
+    if not has_scenery:
+        # Without scenery data every score is 0, which the model read as "all routes have low scenery".
+        hidden |= {"score", "water_km", "forest_km", "viewpoints"}
+    stats = [{k: v for k, v in r.items() if k not in hidden} for r in routes]
     if request.get("end"):
         # distance_km is only the loop length; left in, the model judges A-to-B routes against the default 50 km.
         request = {k: v for k, v in request.items() if k != "distance_km"}
     content = f"Rider asked for:\n{json.dumps(request)}\n\nCandidates:\n{json.dumps(stats)}"
     if not has_scenery:
-        content += "\n\nScenery data is unavailable: ignore water_km, forest_km and viewpoints, and don't mention them."
+        content += "\n\nScenery data is unavailable: don't mention scenery scores, water, forest or views."
     pick = _complete(PICK_PROMPT, content)
     if pick.get("best") not in {r["id"] for r in routes}:
         pick["best"] = routes[0]["id"]

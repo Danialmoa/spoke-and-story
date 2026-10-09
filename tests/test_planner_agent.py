@@ -51,6 +51,14 @@ def test_plan_keeps_loops_closest_to_distance_and_ranks_by_priority(monkeypatch)
     assert [r["duration_min"] for r in fast["routes"]] == [120, 140, 150, 90]
 
 
+def test_pick_without_scenery_data_hides_the_empty_scenery_numbers(monkeypatch):
+    sent = []
+    monkeypatch.setattr(agent, "_complete", lambda instructions, content: sent.append(content) or {"best": "A"})
+    planner.pick(PlanRequest(start="Lecco"), [_route(id="A", score=0.0)], has_scenery=False)
+    candidates = sent[0].split("Candidates")[1]
+    assert '"score"' not in candidates and '"water_km"' not in candidates
+
+
 def test_pick_falls_back_to_a_real_route(monkeypatch):
     monkeypatch.setattr(agent, "_complete", lambda instructions, content: {"best": "Z", "text": "Go with Z!"})
     result = planner.pick(PlanRequest(start="Lecco"), [_route(id="A"), _route(id="B")], has_scenery=False)
