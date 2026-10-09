@@ -27,6 +27,56 @@ def test_places_along_and_choose_spread_stories_along_the_route():
     assert [round(p["index"] / 10) for p in chosen] == [3, 5, 7]
 
 
+def test_choose_prefers_places_not_told_on_earlier_rides():
+    places = story.places_along(_route_north(10), ARTICLES)
+    # Hamlet is farther off the road than Old Tower, but the rider hasn't heard about it yet.
+    assert [p["name"] for p in story.choose(places, 10_000, 3, {"Old Tower"})] == ["Lakeside", "Hamlet", "Midtown"]
+    # Nothing fresh left around km 5: the closest told place comes back.
+    chosen = story.choose(places, 10_000, 3, {"Old Tower", "Hamlet"})
+    assert [p["name"] for p in chosen] == ["Lakeside", "Old Tower", "Midtown"]
+
+
+def test_a_returning_rider_gets_new_angles_and_a_welcome_back(monkeypatch):
+    monkeypatch.setattr(story, "_articles_near", lambda point: ARTICLES)
+    monkeypatch.setattr(story, "_summary", lambda title: f"Lead of {title}")
+    monkeypatch.setattr(story, "_section", lambda title: f"Another section of {title}")
+    sent = {agent.OUTLINE_PROMPT: [], agent.CHAPTER_PROMPT: []}
+
+    def fake_llm(instructions, content, temperature=0.3):
+        sent[instructions].append(content)
+        return {"intro": "Round three!"} if instructions == agent.OUTLINE_PROMPT else {"text": "A chapter."}
+
+    monkeypatch.setattr(agent, "_complete", fake_llm)
+    history = [
+        {"place": "Old Tower", "gist": "the bell that fell on the mayor"},
+        {"place": "Hamlet", "gist": "the cheese that won a war"},
+    ]
+    route = {"coords": _route_north(10), "distance_km": 10.0, "climb_m": 120}
+    script = story.build(PlanRequest(start="Lecco", end="Midtown"), route, history, rides_before=2)
+
+    assert [s["place"] for s in script["stories"]] == ["Lakeside", "Old Tower", "Midtown"]
+    [outline] = sent[agent.OUTLINE_PROMPT]
+    assert '"ride_number_on_this_route": 3' in outline
+    assert "Already told on earlier rides" in outline and "- Old Tower: the bell that fell on the mayor" in outline
+    assert '"name": "Old Tower", "facts": "Another section of Old Tower", "told_before": true' in outline
+    tower = next(c for c in sent[agent.CHAPTER_PROMPT] if "Write chapter 2 (Old Tower)" in c)
+    lake = next(c for c in sent[agent.CHAPTER_PROMPT] if "Write chapter 1 (Lakeside)" in c)
+    assert "find a new angle" in tower and "Another section of Old Tower" in tower and "the cheese that won" in tower
+    assert "find a new angle" not in lake and "Lead of Lakeside" in lake
+
+
+def test_section_picks_a_real_section_and_falls_back_to_the_summary(monkeypatch):
+    monks = "Built by monks who argued a lot. " * 6
+    extract = f"The lead.\n\n== History ==\n\n=== Early years ===\n{monks}\n\n== Trivia ==\nShort.\n\n"
+    extract += "== See also ==\n" + "Another tower\n" * 20
+    monkeypatch.setattr(story, "_get", lambda url, params=None: {"query": {"pages": [{"extract": extract}]}})
+    assert story._section("Old Tower") == f"Early years: {monks.strip()}"
+
+    monkeypatch.setattr(story, "_get", lambda url, params=None: {"query": {"pages": [{"extract": "Only a lead."}]}})
+    monkeypatch.setattr(story, "_summary", lambda title: "The summary.")
+    assert story._section("Old Tower") == "The summary."
+
+
 def test_build_writes_connected_chapters_pinned_to_route_points(monkeypatch):
     monkeypatch.setattr(story, "_articles_near", lambda point: ARTICLES)
     monkeypatch.setattr(story, "_summary", lambda title: f"Facts about {title}")
@@ -35,6 +85,7 @@ def test_build_writes_connected_chapters_pinned_to_route_points(monkeypatch):
     def fake_llm(instructions, content, temperature=0.3):
         if instructions == agent.OUTLINE_PROMPT:
             assert "your current location" in content
+            assert "Already told" not in content and "ride_number_on_this_route" not in content
             return {
                 "thread": "Chasing the lake legend.",
                 "beats": ["beat one", "beat two", "beat three"],
@@ -61,6 +112,7 @@ def test_build_writes_connected_chapters_pinned_to_route_points(monkeypatch):
     assert len(chapter_calls) == 3
     assert all("Chasing the lake legend." in c and "beat three" in c for c in chapter_calls)
     assert any("Facts about Midtown" in c for c in chapter_calls)
+    assert not any("Already told" in c or "new angle" in c for c in chapter_calls)
 
 
 def test_a_failed_outline_still_leaves_the_chapters(monkeypatch):

@@ -1,3 +1,5 @@
+import random
+import re
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote
 
@@ -17,6 +19,9 @@ NEAR_M = 1000
 SKIP_ENDS_M = 1000
 WIKI = "https://en.wikipedia.org"
 USER_AGENT = "SpokeAndStory/0.1 (DEV Hacktoberfest project; https://dev.to/challenges/hf26)"
+# About 4-7 rides of stories; places told longer ago count as fresh again.
+HISTORY_MAX = 30
+DULL_SECTIONS = {"See also", "References", "External links", "Further reading", "Notes", "Sources", "Bibliography"}
 
 
 def _get(url: str, params: dict | None = None) -> dict:
@@ -43,6 +48,29 @@ def _articles_near(point: list) -> list[dict]:
 
 def _summary(title: str) -> str:
     return _get(f"{WIKI}/api/rest_v1/page/summary/{quote(title.replace(' ', '_'), safe='')}").get("extract", "")[:1200]
+
+
+def _section(title: str) -> str:
+    """A random section of the article instead of the lead, so a place told on an earlier ride gets new facts."""
+    params = {
+        "action": "query",
+        "prop": "extracts",
+        "explaintext": 1,
+        "exsectionformat": "wiki",
+        "titles": title,
+        "redirects": 1,
+        "format": "json",
+        "formatversion": 2,
+    }
+    pages = _get(f"{WIKI}/w/api.php", params).get("query", {}).get("pages", [])
+    # [lead, heading, text, heading, text, ...]
+    parts = re.split(r"^==+ (.+?) ==+$", pages[0].get("extract", "") if pages else "", flags=re.M)
+    sections = [
+        f"{head}: {text.strip()}"
+        for head, text in zip(parts[1::2], parts[2::2])
+        if head not in DULL_SECTIONS and len(text.strip()) >= 150
+    ]
+    return random.choice(sections)[:1200] if sections else _summary(title)
 
 
 def _geometry(coords: list) -> tuple[LineString, np.ndarray, float]:
@@ -73,11 +101,12 @@ def places_along(coords: list, articles: list[dict]) -> list[dict]:
     return list(found.values())
 
 
-def choose(places: list[dict], total_m: float, n: int) -> list[dict]:
-    """Up to n places spread along the route, preferring the ones right next to it."""
+def choose(places: list[dict], total_m: float, n: int, told: set[str] = frozenset()) -> list[dict]:
+    """Up to n places spread along the route, preferring ones not told on earlier rides, then the ones right next
+    to it. A told place still fills a stretch that has nothing fresh."""
     gap = total_m / (n + 1) / 2
     chosen = []
-    for p in sorted(places, key=lambda p: p["off_m"]):
+    for p in sorted(places, key=lambda p: (p["name"] in told, p["off_m"])):
         if not SKIP_ENDS_M <= p["along_m"] <= total_m - SKIP_ENDS_M:
             continue
         if all(abs(p["along_m"] - c["along_m"]) >= gap for c in chosen):
@@ -95,8 +124,12 @@ def _label(place: str) -> str:
         return place
 
 
-def build(req, route: dict) -> dict:
-    """The spoken script for ride mode: intro, stories pinned to route points, playful turn lines, finish."""
+def build(req, route: dict, history: list[dict] | None = None, rides_before: int = 0) -> dict:
+    """The spoken script for ride mode: intro, stories pinned to route points, playful turn lines, finish.
+    history: what the rider heard on earlier rides, most recent first: [{"place": <Wikipedia title>, "gist": ...}].
+    rides_before: how many earlier rides had this same start and end."""
+    told = (history or [])[:HISTORY_MAX]
+    told_names = {h["place"] for h in told}
     coords = route["coords"]
     _, along_m, _ = _geometry(coords)
     samples = [
@@ -105,8 +138,8 @@ def build(req, route: dict) -> dict:
     with ThreadPoolExecutor(8) as pool:
         articles = [a for near in pool.map(_articles_near, samples) for a in near]
         n = min(MAX_STORIES, max(2, int(route["distance_km"] // KM_PER_STORY)))
-        places = choose(places_along(coords, articles), route["distance_km"] * 1000, n)
-        facts = list(pool.map(lambda p: _summary(p["name"]), places))
+        places = choose(places_along(coords, articles), route["distance_km"] * 1000, n, told_names)
+        facts = list(pool.map(lambda p: (_section if p["name"] in told_names else _summary)(p["name"]), places))
 
     ride = {
         "from": _label(req.start),
@@ -115,7 +148,9 @@ def build(req, route: dict) -> dict:
         "climb_m": route["climb_m"],
         "bike": req.bike,
     }
-    script = agent.ride_story(ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)])
+    if rides_before:
+        ride["ride_number_on_this_route"] = rides_before + 1
+    script = agent.ride_story(ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)], told)
     beats = script.get("beats", [])
     # lat/lon: after a reroute the page pins the stories to the new route.
     return {

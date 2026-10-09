@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -71,6 +72,10 @@ rider passes, in order. Write:
   once; it gets replaced by an instruction like "turn left onto Via Roma", so the sentence must stay clear.
   Examples: "Hold that thought, {{turn}}!", "Plot twist: {{turn}}.", "Before I say anything else, {{turn}}."
 - finish: 2-3 sentences that close the tale at the arrival.
+If you get "Already told on earlier rides", the rider heard those on past rides: never repeat those facts or jokes.
+A place marked "told_before" is a returning place: give its beat a new angle (a different fact, a "you again?"
+callback, how far the rider has come since). If the ride has ride_number_on_this_route, the rider knows this route:
+greet them as a regular in the intro (like "back on the lake road for round three?").
 Reply with JSON only:
 {{"thread": "...", "beats": ["..."], "intro": "...", "turn_lines": ["..."], "finish": "..."}}"""
 
@@ -80,6 +85,9 @@ You are telling one continuous tale over a bike ride, one chapter per place. Wri
 as the rider rolls past that place: 4-6 sentences (60-100 words). Pick up from the previous beat, use this place's
 facts, and end with a hook that leads to the next beat. Bring it back to the ride: the climb, the speed, their legs.
 Use only facts from the given Wikipedia text; never invent history, dates or numbers.
+If you get "Already told on earlier rides", the rider heard those on past rides: never repeat those facts or jokes.
+If this place was told before, find a new angle: a different fact from the given text, a "you again?" callback, or how
+far the rider has come since.
 Reply with JSON only: {{"text": "..."}}"""
 # Chapters are written in parallel, so a different flavour per chapter keeps them from sounding alike.
 FLAVOURS = [
@@ -253,31 +261,52 @@ def weekly_ideas(days: list[dict], bike: str) -> dict:
     return _complete(WEEKLY_PROMPT, f"Bike: {bike}\n\nForecast:\n{json.dumps(days)}")
 
 
-def _chapter(ride: dict, outline: dict, places: list[dict], i: int) -> str:
+def _told(history: list[dict]) -> str:
+    if not history:
+        return ""
+    lines = "\n".join(f"- {h['place']}: {h['gist']}" for h in history)
+    return f"\n\nAlready told on earlier rides (place: what was told):\n{lines}"
+
+
+def _chapter(ride: dict, outline: dict, places: list[dict], i: int, flavour: str, history: list[dict]) -> str:
     beats = outline.get("beats", [])
     plan = [
         {"chapter": n + 1, "place": p["name"], "beat": beats[n] if n < len(beats) else ""} for n, p in enumerate(places)
     ]
+    place = places[i]["name"]
+    task = f"Write chapter {i + 1} ({place}). Flavour: {flavour}."
+    if any(h["place"] == place for h in history):
+        task += f" You told {place} on an earlier ride: find a new angle."
     content = (
         f"Ride:\n{json.dumps(ride)}\n\nThe tale: {outline.get('thread', '')}\n\n"
-        f"Chapters:\n{json.dumps(plan, ensure_ascii=False)}\n\n"
-        f"Write chapter {i + 1} ({places[i]['name']}). Flavour: {FLAVOURS[i % len(FLAVOURS)]}.\n"
-        f"Facts about {places[i]['name']}:\n{places[i]['facts']}"
+        f"Chapters:\n{json.dumps(plan, ensure_ascii=False)}{_told(history)}\n\n"
+        f"{task}\nFacts about {place}:\n{places[i]['facts']}"
     )
     return _try_complete(CHAPTER_PROMPT, content, 0.9).get("text", "")
 
 
-def ride_story(ride: dict, places: list[dict]) -> dict:
+def ride_story(ride: dict, places: list[dict], history: list[dict] = ()) -> dict:
     """An outline first (the running tale, one beat per place, intro, turn lines, finish), then all chapters in
     parallel, each seeing the whole outline so they connect. One call writing everything took ~90 s.
-    stories[i] belongs to places[i] ("" if that one failed)."""
-    short = [{"name": p["name"], "facts": p["facts"][:300]} for p in places]
-    outline = _try_complete(
-        OUTLINE_PROMPT, f"Ride:\n{json.dumps(ride)}\n\nPlaces in order:\n{json.dumps(short, ensure_ascii=False)}", 0.9
-    )
+    history: [{"place", "gist"}] the rider heard on earlier rides. stories[i] belongs to places[i] ("" if that one
+    failed)."""
+    told = {h["place"] for h in history}
+    short = []
+    for p in places:
+        short.append({"name": p["name"], "facts": p["facts"][:300]})
+        if p["name"] in told:
+            short[-1]["told_before"] = True
+    content = f"Ride:\n{json.dumps(ride)}\n\nPlaces in order:\n{json.dumps(short, ensure_ascii=False)}{_told(history)}"
+    outline = _try_complete(OUTLINE_PROMPT, content, 0.9)
+    # A fresh order each ride, so the same place doesn't always get the same kind of chapter.
+    flavours = random.sample(FLAVOURS, len(FLAVOURS))
+
+    def write(i: int) -> str:
+        return _chapter(ride, outline, places, i, flavours[i % len(flavours)], history)
+
     # Four at a time: all eight at once made Gemma's free tier answer "overloaded" more often.
     with ThreadPoolExecutor(4) as pool:
-        stories = list(pool.map(lambda i: _chapter(ride, outline, places, i), range(len(places))))
+        stories = list(pool.map(write, range(len(places))))
     return {**outline, "stories": stories}
 
 

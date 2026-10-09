@@ -168,5 +168,7 @@ Rate limit checked live: 429 after 30 calls; a faked `X-Forwarded-For` is caught
 
 ## Ideas parked
 
+- **Car mode** (idea 9 Oct): the same storytelling guide for drives from one place to another. ORS has a
+  `driving-car` profile; stories spaced further apart, fully hands-free. After the hackathon.
 - A clickable "grab a beer 🍺" button for an empty destination (rejected for now).
 - Voice picker with several Kokoro voices (we kept Santa only).
