@@ -121,7 +121,6 @@ function narrate(next, done, left) {
       say(turnLine(next), { urgent: true, until: kms[next.index] + 0.03 });
     }
   }
-  narrateStops(done);
 }
 
 // Santa takes seconds per line, so the whole ride's lines are made in the background, in route order, as soon as

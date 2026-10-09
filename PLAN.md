@@ -108,6 +108,18 @@ Gemma answers in ~2-3 s, so the guide reacts **while riding** (`/api/live`, `/ap
       of maps, fonts and the voice on a phone first. Shorter live chapters (~40 words) would also help.
 - Few OSM cafés/bars are tagged as old or historic, so spot lines lean on the kind of place and its food.
 
+### 1b. Memory, history, brief, circles (built 9 Oct)
+
+- [x] **Remember me** (opt-in, anonymous ID): private Backboard assistant per rider; the Ride buddy is a tool-calling
+      agent (search_place, plan_routes, remember). Forget me deletes everything. Memory saved with the free add call.
+- [x] **History-aware stories:** told places/facts are remembered; repeat rides get new places, new facts, "round two?".
+- [x] **Before-you-go brief:** news (GDELT; Gemma picks fun/odd items), destination info, arrival weather + sunset,
+      water and repair stops. Told by Santa as a story after the intro. GDELT often answers 429: news is rare so far.
+- [x] **Circles, not route km** (after the first real ride: 44 lines ready, almost nothing said): stories and spots fire
+      when the rider enters a circle around the place (≥ 0.8 km), on or off route; area stories about where the rider
+      is after ~8 quiet minutes (`/api/area`); reroutes at most every 2 min, A→B straight to the destination.
+- ORS hung for minutes on gravel + flat with alternatives: alternatives get 15 s, then one route.
+
 ### 2. Launch plan (Friday)
 
 The deployed HTTPS URL is needed for Saturday too: phones only give GPS to `https://` pages.

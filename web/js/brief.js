@@ -31,7 +31,7 @@ function sayBrief(route) {
   briefs.get(route)?.then(async (b) => {
     if (!b?.spoken || ride.planned !== route || $('#ride').hidden || ride.km >= 0.5) return;
     await prepare(b.spoken, { first: true });
-    if (ride.route === route && !$('#ride').hidden && ride.km < 0.5) say(b.spoken, { title: 'Before you go' });
+    if (ride.planned === route && !$('#ride').hidden && ride.km < 0.5) say(b.spoken, { title: 'Before you go' });
   });
 }
 

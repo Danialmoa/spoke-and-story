@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from . import (
     agent,
+    area,
     brief,
     buddy,
     limits,
@@ -119,6 +120,15 @@ class LiveRequest(BaseModel):
     context: LiveContext = LiveContext()
 
 
+class AreaRequest(BaseModel):
+    point: tuple[Annotated[float, Field(ge=-90, le=90)], Annotated[float, Field(ge=-180, le=180)]]
+    bike: Bike = "road"
+    thread: Text | None = None
+    # Place names already told this ride.
+    told: list[Text] = Field([], max_length=40)
+    context: LiveContext = LiveContext()
+
+
 class SpotsRequest(BaseModel):
     coords: list[Point] = Field(min_length=2)
 
@@ -214,6 +224,13 @@ def ride_story(body: StoryRequest):
 def live(body: LiveRequest):
     usage.track("live", kind=body.event)
     return {"text": agent.live_line(body.event, body.bike, body.context.model_dump())}
+
+
+@app.post("/api/area")
+def area_story(body: AreaRequest):
+    """A story about where the rider is right now, for when nothing on the planned route is near."""
+    usage.track("live", kind="area")
+    return area.tell(body.point, body.bike, body.thread, body.told, body.context.model_dump())
 
 
 @app.post("/api/spots")

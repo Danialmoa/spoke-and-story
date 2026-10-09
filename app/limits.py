@@ -12,6 +12,7 @@ LIMITED = {
     "/api/chat",
     "/api/weekly",
     "/api/live",
+    "/api/area",
     "/api/spots",
     "/api/reroute",
     "/api/brief",
@@ -22,6 +23,8 @@ LIMITED = {
 MAX_CALLS = 30
 WINDOW_S = 60
 MAX_CLIENTS = 10_000
+# Module-level so tests can start each case with an empty budget.
+calls: dict[str, deque] = defaultdict(deque)
 SLOW_DOWN = "Easy there, speedster! Too many requests in a minute. Drink some water and try again shortly."
 
 
@@ -38,8 +41,6 @@ def client_key(request: Request) -> str:
 
 
 def install(app: FastAPI) -> None:
-    calls: dict[str, deque] = defaultdict(deque)
-
     @app.middleware("http")
     async def rate_limit(request: Request, call_next):
         if request.url.path not in LIMITED:

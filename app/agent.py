@@ -119,6 +119,8 @@ LIVE_TASKS = {
     "coffee, a gelato or a beer, whatever fits.",
     "reroute": "The rider left the planned route and a new route was just found. Announce it like a plot twist in the "
     "tale, at most 30 words. No blame.",
+    "area": "Tell a short chapter of the tale about where the rider is right now (place), using only the facts in "
+    "base; continue the running joke (thread). 40-80 words, plain spoken English.",
 }
 
 TASKS = {

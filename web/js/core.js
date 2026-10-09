@@ -89,6 +89,7 @@ const api = {
   // The server can take 20-40 s when it falls back to Google; by then the pre-written line is the better choice.
   live: (body) => (state.live ? postJson('/api/live', body, 8000) : mockLive(body)),
   spots: (coords) => (state.live ? postJson('/api/spots', { coords }) : mockSpots(coords)),
+  area: (body) => (state.live ? postJson('/api/area', body, 10000) : mockArea(body)),
   reroute: (body) => (state.live ? postJson('/api/reroute', body) : mockReroute(body)),
   event: (body) => {
     if (state.live) postJson('/api/event', body).catch(() => {});

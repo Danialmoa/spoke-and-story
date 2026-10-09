@@ -143,10 +143,13 @@ function unlockAudio() {
   window.speechSynthesis?.speak(new SpeechSynthesisUtterance(''));
 }
 
+// until is a km on the current route (turns); stale() turns true once a line is too late, e.g. far past its place.
+const expired = (item) => (item.until != null && ride.km > item.until) || Boolean(item.stale?.());
+
 // Turns jump ahead of stories in the queue but never cut off what is already playing.
-function say(text, { urgent = false, title = '', until = null } = {}) {
+function say(text, { urgent = false, title = '', until = null, stale = null } = {}) {
   if (!ride.voice || !text) return;
-  const item = { text, title, until, urgent };
+  const item = { text, title, until, stale, urgent };
   if (urgent) {
     const firstStory = voice.queue.findIndex((q) => !q.urgent);
     voice.queue.splice(firstStory < 0 ? voice.queue.length : firstStory, 0, item);
@@ -160,13 +163,15 @@ async function drainVoice() {
   voice.busy = true;
   while (voice.queue.length) {
     const item = voice.queue.shift();
-    if (item.until != null && ride.km > item.until) continue;
+    if (expired(item)) continue;
     if (!item.urgent) ride.said = [...ride.said, item.text].slice(-3);
     showSubtitle(item.title ? item : idleSubtitle());
+    voice.item = item;
     await speakOne(item);
   }
   showSubtitle(idleSubtitle());
   voice.busy = false;
+  voice.item = null;
 }
 
 // One voice only: switching to the browser voice when Santa was late sounded like two people talking.
@@ -180,7 +185,7 @@ async function speakOne(item) {
   }
   const url = await Promise.race([prepare(item.text), sleep(item.urgent ? 8000 : 90000).then(() => null)]);
   if (session !== voice.session || !url) return;
-  if (item.until != null && ride.km > item.until) return;
+  if (expired(item)) return;
   await playUrl(url);
 }
 

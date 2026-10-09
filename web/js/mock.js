@@ -219,6 +219,15 @@ async function mockLive({ event, context: c }) {
   };
 }
 
+async function mockArea({ point, told }) {
+  await sleep(1500);
+  const place = MOCK.places.filter(([name]) => !told.includes(name))
+    .sort((a, b) => haversineKm(point, [a[1], a[2]]) - haversineKm(point, [b[1], b[2]]))[0]?.[0];
+  return place
+    ? { place, text: `Nothing on the map right here, so let me tell you about ${place}, just over there. Locals say it has the best views on the lake. I say every view is the best view when you're not pedalling uphill.` }
+    : { place: null, text: '' };
+}
+
 async function mockSpots(coords) {
   await sleep(800);
   const spot = (name, kind, note, share) => {
