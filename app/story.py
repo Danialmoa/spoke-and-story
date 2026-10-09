@@ -9,8 +9,9 @@ from shapely.geometry import LineString, Point
 
 from . import agent, scenery, tracing
 
-MAX_STORIES = 8
-KM_PER_STORY = 3
+# A place about every 2 km: at every 3 km most of a real ride was silence.
+MAX_STORIES = 12
+KM_PER_STORY = 2
 # Wikipedia's geosearch finds articles around a point; ask every SAMPLE_M along the route.
 SAMPLE_M = 2000
 SEARCH_RADIUS_M = 1500

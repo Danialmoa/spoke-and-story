@@ -176,7 +176,9 @@ function onPosition({ lat, lon, speedKmh = null, heading = null, accuracyM = 0 }
   const now = Date.now();
   const last = ride.lastFix;
   const match = matchRoute(pos);
+  const wasOff = ride.offRoute;
   ride.offRoute = match.offKm > OFF_ROUTE_KM + accuracyM / 1000;
+  if (ride.offRoute !== wasOff) rideLog(ride.offRoute ? `off route (${Math.round(match.offKm * 1000)} m)` : 'back on route');
   if (!ride.offRoute) {
     ride.idx = match.index;
     ride.km = match.km;
@@ -221,18 +223,23 @@ async function startRide(simulate) {
   Object.assign(ride, {
     route, planned: route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
     idx: 0, km: 0, kmBase: 0, climbBase: 0, speed: 0, offRoute: false, lastFix: null, spoken: new Set(), said: [], story: null,
-    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false,
+    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false, log: [],
   });
+  // iOS offers "Undo Typing" on every shake while a search box still has focus: on a bike that's all the time.
+  document.activeElement?.blur?.();
+  $('#ride-log').hidden = true;
+  // The dot starts where the rider is (when known), not at the route's start, until the first GPS fix.
+  const here = !simulate && state.here ? state.here.split(',').map(Number) : route.coords[0];
   resetLive();
   $('#ride').hidden = false;
   document.body.classList.add('riding');
   $('#ride-frame').className = `${$('#map-frame').className} ride-frame`;
   $('#ride-frame').append($('#map'));
   map.m.invalidateSize();
-  ride.rider = L.marker(route.coords[0], {
+  ride.rider = L.marker(here, {
     icon: L.divIcon({ className: 'rider', html: RIDER, iconSize: [0, 0] }), interactive: false, keyboard: false, zIndexOffset: 1000,
   }).addTo(map.m);
-  map.m.setView(route.coords[0], 16, { animate: false });
+  map.m.setView(here, 16, { animate: false });
   $('#ride-mode').textContent = simulate ? 'Simulation · fast-forward' : 'GPS';
   loadVoice();
   showSubtitle(WAITING);
@@ -300,6 +307,16 @@ function endRide() {
   rememberRide();
 }
 
+// What the guide did and why, kept on the phone only: tap the voice status to see it after a ride.
+function rideLog(text) {
+  ride.log = [...(ride.log || []).slice(-149), `${new Date().toLocaleTimeString('en-GB')} ${text}`];
+  if (!$('#ride-log').hidden) renderRideLog();
+}
+
+function renderRideLog() {
+  $('#ride-log').innerHTML = (ride.log || []).map((line) => `<li>${esc(line)}</li>`).join('');
+}
+
 function wireRide() {
   $('#ride-start').addEventListener('click', () => startRide(false));
   $('#ride-sim').addEventListener('click', () => startRide(true));
@@ -311,7 +328,11 @@ function wireRide() {
     e.currentTarget.setAttribute('aria-label', min ? 'Show subtitles' : 'Hide subtitles');
   });
   $('#voice-status').addEventListener('click', () => {
-    if (!voice.blocked) return;
+    if (!voice.blocked) {
+      $('#ride-log').hidden = !$('#ride-log').hidden;
+      renderRideLog();
+      return;
+    }
     voice.blocked = false;
     unlockAudio();
     renderVoiceStatus();

@@ -14,17 +14,17 @@ const LIVE_WAIT_MS = 30000;
 const COMMENT_GAP_MS = 120000;
 const QUIET_NEAR_KM = 0.5;
 const REROUTE_AFTER_MS = 15000;
-const REROUTE_GAP_MS = 120000;
-const TWIST_GAP_MS = 300000;
-const AREA_QUIET_MS = 480000;
-const AREA_QUIET_KM = 3;
+const REROUTE_GAP_MS = 30000;
+// Santa fills a quiet stretch quickly: on the first real rides 90% of the time was silence.
+const AREA_QUIET_MS = 150000;
+const AREA_QUIET_KM = 1.5;
 const AREA_STALE_KM = 2;
 const round1 = (x) => Math.round(x * 10) / 10;
 
 function resetLive() {
   Object.assign(live, {
     lines: new Map(), comment: null, top: 0, topSaid: 0, lastComment: 0, grind: 0, last: null, offSince: null, rerouting: false,
-    lastReroute: 0, lastTwist: 0, told: [], asking: false, quietFrom: { t: Date.now(), km: 0 }, pos: null, odo: 0,
+    lastReroute: 0, told: [], entered: new Set(), asking: false, quietFrom: { t: Date.now(), km: 0 }, pos: null, odo: 0,
   });
 }
 
@@ -91,8 +91,10 @@ function askLive(stop) {
   const story = stop.type === 'story';
   // The pre-written chapter goes first: it's the fallback, and live lines must never leave it unvoiced.
   if (story) prepare(stop.text, { first: true });
+  rideLog(`asked live line: ${stop.name}`);
   liveLine(story ? 'chapter' : 'spot', { place: stop.name, beat: stop.beat, base: story ? stop.text : stop.note }).then((text) => {
     line.text = text;
+    rideLog(`live line ${text ? 'written' : 'failed'}: ${stop.name}`);
     if (!ride.spoken.has(stop.key)) prepare(text, { first: true });
   });
 }
@@ -112,6 +114,7 @@ function tell(stop) {
   }
   ride.spoken.add(stop.key);
   live.told.push(stop.name);
+  rideLog(`queued ${text ? 'live' : 'pre-written'}: ${stop.name}`);
   say(text || stop.text, { title: stop.name, stale: farFrom([stop.lat, stop.lon], stop.radius + STALE_KM[stop.type]) });
 }
 
@@ -121,6 +124,10 @@ function narrateStops(pos) {
     .sort((a, b) => a.km - b.km);
   for (const { stop, km } of near) {
     askLive(stop);
+    if (km < stop.radius && !live.entered.has(stop.key)) {
+      live.entered.add(stop.key);
+      rideLog(`entered circle: ${stop.name}`);
+    }
     if (km < stop.radius) tell(stop);
   }
 }
@@ -187,6 +194,7 @@ function watchArea(pos, now) {
   if (!quiet || live.asking || !ride.voice || ride.stops.some((s) => due(s) && kmTo(pos, s) < s.radius + leadKm())) return;
   live.quietFrom = { t: now, km: live.odo };
   live.asking = true;
+  rideLog('area story asked');
   const { planned } = ride;
   const point = pos.map((x) => +x.toFixed(3));
   // Places still ahead count as told too, so an area story never takes a chapter's place.
@@ -194,6 +202,7 @@ function watchArea(pos, now) {
   const body = { point, bike: bikeOf(), thread: ride.story?.thread || null, told, context: rideContext() };
   const ask = api.area(body).then((r) => {
     if (r.place) live.told.push(r.place);
+    rideLog(r.text ? `area story written: ${r.place}` : 'area story: nothing to say');
     return { text: r.text || '', title: r.place || 'Around here' };
   }, () => ({ text: '' })).finally(() => { live.asking = false; });
   sayLive(ask, () => ride.planned !== planned || farFrom(point, AREA_STALE_KM)());
@@ -232,14 +241,14 @@ async function reroute(pos) {
   const { route } = ride;
   live.rerouting = true;
   live.lastReroute = Date.now();
+  rideLog('rerouting…');
   const body = { points: reroutePoints(pos), bike: bikeOf(), priority: state.req?.priority || state.priority };
   const fresh = await api.reroute(body).catch(() => null);
   live.rerouting = false;
+  rideLog(fresh?.coords?.length ? `new route: ${fresh.distance_km} km` : 'reroute failed');
   // Back on the dashed line by now: keep the planned route. On failure the off-route banner stays.
   if (!fresh?.coords?.length || ride.route !== route || !ride.offRoute || $('#ride').hidden) return;
   swapRoute(fresh);
-  if (Date.now() - live.lastTwist < TWIST_GAP_MS) return;
-  live.lastTwist = Date.now();
   sayLive(liveLine('reroute').then((text) => ({ text, title: 'New route' })), sameRoute());
 }
 

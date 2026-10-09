@@ -26,7 +26,7 @@ const SILENT_WAV = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAE
 const VOICE_STATUS = {
   idle: '',
   loading: 'Loading Santa, an open-source voice model (~115 MB, first ride only)…',
-  ready: 'Voice: Santa (Kokoro, running on this device)',
+  ready: 'Santa (Kokoro, on this device) · tap for the ride log',
   failed: "Kokoro couldn't load here, so you'll hear your browser's voice.",
   blocked: '🔊 Your phone blocked the sound. Tap here to turn on Santa.',
 };
@@ -163,7 +163,10 @@ async function drainVoice() {
   voice.busy = true;
   while (voice.queue.length) {
     const item = voice.queue.shift();
-    if (expired(item)) continue;
+    if (expired(item)) {
+      rideLog(`dropped, too late: ${item.title || 'turn'}`);
+      continue;
+    }
     if (!item.urgent) ride.said = [...ride.said, item.text].slice(-3);
     showSubtitle(item.title ? item : idleSubtitle());
     voice.item = item;
@@ -183,9 +186,18 @@ async function speakOne(item) {
     await browserSay(item.text);
     return;
   }
+  const asked = Date.now();
   const url = await Promise.race([prepare(item.text), sleep(item.urgent ? 8000 : 90000).then(() => null)]);
-  if (session !== voice.session || !url) return;
-  if (expired(item)) return;
+  if (session !== voice.session) return;
+  if (!url) {
+    rideLog(`skipped, voice not ready after ${Math.round((Date.now() - asked) / 1000)} s: ${item.title || 'turn'}`);
+    return;
+  }
+  if (expired(item)) {
+    rideLog(`dropped, too late: ${item.title || 'turn'}`);
+    return;
+  }
+  rideLog(`saying: ${item.title || 'turn'}`);
   await playUrl(url);
 }
 
