@@ -85,6 +85,11 @@ The start command uses `--no-access-log` on purpose: search text and GPS points 
 - To limit how often one visitor can call the expensive endpoints, the server keeps the IP address in memory only. It
   is never logged or saved, and it's gone when the server restarts.
 - To plan a route, your start and destination go to the routing and map services listed below. We don't keep them.
+- **Remember me** (in the Ride buddy tab) is off by default. Turned on, your browser makes a random ID (no account) and
+  the ride buddy keeps, on Backboard under that ID: what you tell it about your riding (your bike, "hates climbs",
+  "loves lake views"...) and, after each ride, the place names of your start, destination and the story places you
+  heard, with a one-line gist of each story. Never GPS positions or your IP. "What I remember about you" shows all of
+  it, and **Forget me** deletes all of it from Backboard and drops the ID from your browser.
 - The voice runs on your device. If Sentry is on, it gets timings and token counts, never prompts, query strings or
   request bodies.
 

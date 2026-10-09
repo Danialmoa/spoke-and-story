@@ -80,7 +80,7 @@ def test_chat_step_passes_location_and_stops_asking_after_two_questions(monkeypa
         {"role": "user", "content": "road"},
     ]
     agent.chat_step(messages, "45.85,9.39")
-    assert "current location is 45.85,9.39" in sent[-1]
+    assert "current location is known" in sent[-1] and "45.85" not in sent[-1]
     assert "Reply with a plan now" not in sent[-1]
 
     agent.chat_step(
@@ -95,6 +95,13 @@ def test_pick_reply_without_text_still_answers(monkeypatch):
         "best": "B",
         "explanation": "",
     }
+
+
+def test_pick_never_sends_the_riders_position(monkeypatch):
+    sent = []
+    monkeypatch.setattr(agent, "_complete", lambda instructions, content: sent.append(content) or {"best": "A"})
+    planner.pick(PlanRequest(start="45.85601,9.39437", end="Varenna"), [_route(id="A")], has_scenery=True)
+    assert "45.85" not in sent[0] and '"start": "your current location"' in sent[0]
 
 
 def test_pick_hides_the_loop_distance_for_a_to_b_rides(monkeypatch):

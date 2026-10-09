@@ -69,6 +69,7 @@ async function sendChat(raw) {
   }
   state.chatBusy = false;
   renderThread();
+  loadMemories();
 }
 
 async function loadWeek(place, delay) {
@@ -134,6 +135,7 @@ async function boot() {
   wireSearch();
   wireRide();
   wireLogo();
+  wireMemory();
   initMap();
   renderThread();
   locate().then((here) => {

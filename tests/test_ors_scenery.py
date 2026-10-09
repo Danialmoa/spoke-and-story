@@ -27,10 +27,20 @@ def test_loops_skip_failed_seeds_and_fail_only_when_all_fail(monkeypatch):
 
 def test_alternative_routes_only_for_shorter_rides(monkeypatch):
     bodies = []
-    monkeypatch.setattr(ors, "_directions", lambda bike, priority, body: bodies.append(body) or [])
+    monkeypatch.setattr(ors, "_directions", lambda bike, priority, body, **kw: bodies.append(body) or [])
     ors.a_to_b((45.85, 9.40), (45.70, 9.62), "road", "scenic")  # Lecco -> Curno, ~24 km
     ors.a_to_b((45.85, 9.40), (45.07, 7.69), "road", "scenic")  # Lecco -> Turin, ~160 km
     assert ["alternative_routes" in b for b in bodies] == [True, False]
+
+
+def test_a_to_b_falls_back_to_one_route_when_alternatives_hang(monkeypatch):
+    def directions(bike, priority, body, **kw):
+        if "alternative_routes" in body:
+            raise httpx.ReadTimeout("slow")
+        return ["one route"]
+
+    monkeypatch.setattr(ors, "_directions", directions)
+    assert ors.a_to_b((45.70, 9.67), (45.85, 9.40), "gravel", "flat") == ["one route"]
 
 
 def test_scenery_gives_up_after_its_budget(monkeypatch):

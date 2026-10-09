@@ -14,6 +14,10 @@ LIMITED = {
     "/api/live",
     "/api/spots",
     "/api/reroute",
+    "/api/brief",
+    "/api/rider/ride",
+    "/api/rider/memories",
+    "/api/rider/forget",
 }
 MAX_CALLS = 30
 WINDOW_S = 60

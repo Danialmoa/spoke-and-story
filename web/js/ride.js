@@ -67,6 +67,7 @@ function pointAt(km) {
 
 function ensureStory(route) {
   ensureSpots(route);
+  ensureBrief(route);
   if (!stories.has(route)) {
     const story = api.story(state.req || readForm(), route).catch(() => null);
     stories.set(route, story);
@@ -108,6 +109,7 @@ function narrate(next, done, left) {
       ride.spoken.add('finish');
       say(ride.story?.finish || 'You made it. Nice ride!', { title: 'Finish' });
       api.event({ event: 'ride_finish', mode: ride.mode, km: ride.route.distance_km, area: areaOf(ride.route.coords[0]) });
+      rememberRide();
     }
     return;
   }
@@ -220,7 +222,7 @@ async function startRide(simulate) {
   Object.assign(ride, {
     route, planned: route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
     idx: 0, km: 0, kmBase: 0, climbBase: 0, speed: 0, offRoute: false, lastFix: null, spoken: new Set(), said: [], story: null,
-    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true,
+    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false,
   });
   resetLive();
   $('#ride').hidden = false;
@@ -248,6 +250,7 @@ async function startRide(simulate) {
     prepareRide(route, story, ride.km);
     if (!voice.busy) showSubtitle(null);
     if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
+    sayBrief(route);
   });
   ensureSpots(route).then((spots) => {
     if (ride.planned !== route || $('#ride').hidden) return;
@@ -295,6 +298,7 @@ function endRide() {
   document.body.classList.remove('riding');
   map.m.invalidateSize();
   fitRoutes();
+  rememberRide();
 }
 
 function wireRide() {

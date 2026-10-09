@@ -1,6 +1,8 @@
 import logging
+import os
 from pathlib import Path
 from typing import Annotated, Literal
+from uuid import UUID
 
 import httpx
 from dotenv import load_dotenv
@@ -10,7 +12,22 @@ from fastapi.staticfiles import StaticFiles
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field
 
-from . import agent, limits, openmeteo, ors, photon, planner, route_stats, spots, story, tracing, usage
+from . import (
+    agent,
+    brief,
+    buddy,
+    limits,
+    memory,
+    openmeteo,
+    ors,
+    photon,
+    planner,
+    route_stats,
+    spots,
+    story,
+    tracing,
+    usage,
+)
 from .planner import PlanRequest
 
 load_dotenv()
@@ -19,22 +36,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 # httpx logs full request URLs at INFO, which include the ORS key, typed addresses and GPS points.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("google_genai").setLevel(logging.WARNING)
+log = logging.getLogger("spokestory.api")
 
 app = FastAPI(title="Spoke & Story")
 limits.install(app)
 WEB = Path(__file__).parent.parent / "web"
 Bike = Literal["road", "gravel", "mtb"]
 Text = Annotated[str, Field(max_length=1500)]
+Point = Annotated[list[float], Field(min_length=2, max_length=3)]
 
 
 class Message(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    content: Text
 
 
 class ChatRequest(BaseModel):
-    messages: list[Message]
+    messages: list[Message] = Field(min_length=1, max_length=20)
     location: str | None = None
+    # The anonymous ID from "Remember me"; None = memory off.
+    rider: UUID | None = None
 
 
 class PickRequest(BaseModel):
@@ -46,6 +67,25 @@ class PickRequest(BaseModel):
 class StoryRequest(BaseModel):
     request: PlanRequest
     route: dict
+    rider: UUID | None = None
+
+
+class Rider(BaseModel):
+    rider: UUID
+
+
+class Told(BaseModel):
+    place: Annotated[str, Field(max_length=300)]
+    gist: Annotated[str, Field(max_length=300)] = ""
+
+
+class RideSummary(BaseModel):
+    """Sent by the page when a ride with Remember me on ends: place names only, never a position."""
+
+    rider: UUID
+    start: Annotated[str, Field(max_length=200)] | None = None
+    end: Annotated[str, Field(max_length=200)] | None = None
+    told: list[Told] = Field([], max_length=12)
 
 
 class Event(BaseModel):
@@ -80,7 +120,7 @@ class LiveRequest(BaseModel):
 
 
 class SpotsRequest(BaseModel):
-    coords: list[Annotated[list[float], Field(min_length=2, max_length=3)]] = Field(min_length=2)
+    coords: list[Point] = Field(min_length=2)
 
 
 class RerouteRequest(BaseModel):
@@ -89,6 +129,18 @@ class RerouteRequest(BaseModel):
     points: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(min_length=2, max_length=25)
     bike: Bike = "road"
     priority: Literal["scenic", "flat", "fast"] = "scenic"
+
+
+class BriefRoute(BaseModel):
+    coords: list[Point] = Field(min_length=2, max_length=20_000)
+    distance_km: float | None = None
+    duration_min: float = Field(0, ge=0, le=1440)
+
+
+class BriefRequest(BaseModel):
+    start: Text
+    end: Text | None = None
+    route: BriefRoute
 
 
 @app.exception_handler(ValueError)
@@ -117,11 +169,15 @@ async def health():
     return {"ok": True}
 
 
+def _track_plan(req: dict, result: dict, source: str) -> None:
+    start = result["start"]
+    kind = "a_to_b" if req["end"] else "loop"
+    usage.track("plan", source=source, area=usage.area(start["lat"], start["lon"]), kind=kind, bike=req["bike"])
+
+
 def _plan(req: PlanRequest, source: str) -> dict:
     result = planner.plan(req)
-    start = result["start"]
-    kind = "a_to_b" if req.end else "loop"
-    usage.track("plan", source=source, area=usage.area(start["lat"], start["lon"]), kind=kind, bike=req.bike)
+    _track_plan(req.model_dump(), result, source)
     return result
 
 
@@ -144,8 +200,14 @@ def pick(body: PickRequest):
 
 @app.post("/api/story")
 def ride_story(body: StoryRequest):
-    usage.track("story")
-    return story.build(body.request, body.route)
+    usage.track("story", memory=body.rider is not None)
+    rides = memory.past_rides(str(body.rider)) if body.rider else []
+    req = body.request
+    history = [told for ride in rides for told in ride["told"]]
+    # Rides are stored with place names only; loops from the same start are different rides.
+    start, end = memory._place(req.start), memory._place(req.end)
+    rides_before = sum(ride["start"] == start and ride["end"] == end for ride in rides) if end else 0
+    return story.build(req, body.route, history=history, rides_before=rides_before)
 
 
 @app.post("/api/live")
@@ -178,15 +240,50 @@ def stats():
 
 @app.post("/api/chat")
 def chat(body: ChatRequest):
-    usage.track("chat_message")
-    step = agent.chat_step([m.model_dump() for m in body.messages], body.location)
+    usage.track("chat_message", memory=body.rider is not None)
+    messages = [m.model_dump() for m in body.messages]
+    if os.environ.get("BACKBOARD_API_KEY"):
+        try:
+            reply = buddy.reply(messages, body.location, str(body.rider) if body.rider else None)
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            log.warning("Ride buddy agent failed, using the simple chat: %s", type(exc).__name__)
+        else:
+            if reply["type"] == "plan":
+                _track_plan(reply["request"], reply["result"], source="buddy")
+            return reply
+    step = agent.chat_step(messages, body.location)
     if step.get("type") != "plan":
         return {"type": "question", "text": step.get("text") or "Where would you like to ride?"}
     # The model sometimes sends nulls (e.g. "distance_km": null for an A-to-B ride); let the defaults apply.
-    req = PlanRequest(**{k: v for k, v in (step.get("request") or {}).items() if v is not None})
+    args = {k: v for k, v in (step.get("request") or {}).items() if v is not None}
+    # Like the buddy, the model only knows "here"; the position goes in now.
+    if body.location and str(args.get("start", buddy.HERE)).strip().lower() in buddy.HERE_WORDS:
+        args["start"] = body.location
+    req = PlanRequest(**args)
     result = _plan(req, source="chat")
     text = f"I found {len(result['routes'])} routes. Give me a moment to pick the best one for you."
     return {"type": "plan", "text": text, "request": req.model_dump(), "result": result}
+
+
+@app.post("/api/rider/ride")
+def rider_ride(body: RideSummary):
+    usage.track("rider_ride")
+    memory.remember_ride(str(body.rider), body.model_dump(exclude={"rider"}))
+    return {"ok": True}
+
+
+@app.post("/api/rider/memories")
+def rider_memories(body: Rider):
+    """What the buddy remembers, so the rider can see it. POST keeps the rider ID out of URLs and access logs."""
+    usage.track("rider_memories")
+    return {"memories": memory.memories(str(body.rider))}
+
+
+@app.post("/api/rider/forget")
+def rider_forget(body: Rider):
+    usage.track("rider_forget")
+    memory.forget(str(body.rider))
+    return {"ok": True}
 
 
 @app.get("/api/weekly")
@@ -200,6 +297,12 @@ def weekly(place: str, bike: Literal["road", "gravel", "mtb"] = "road"):
 def index():
     # web/index.html is also published as an Artifact, which doesn't allow a doctype in the file.
     return "<!doctype html>\n" + (WEB / "index.html").read_text()
+
+
+@app.post("/api/brief")
+def before_you_go(body: BriefRequest):
+    usage.track("brief")
+    return brief.build(body.start, body.end, body.route.model_dump())
 
 
 app.mount("/", StaticFiles(directory=WEB), name="web")

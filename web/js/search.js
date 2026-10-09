@@ -28,7 +28,8 @@ async function planFromForm() {
 // The agent's pick is slow (15-25 s), so routes are shown first and the pick fills in when it arrives.
 async function pickBest(req, res) {
   try {
-    const pick = await api.pick(req, res);
+    // The ride buddy agent picks while it plans, so its routes come with the pick.
+    const pick = res.explanation ? { best: res.best, explanation: res.explanation } : await api.pick(req, res);
     if (state.result !== res) return null;
     Object.assign(res, pick);
     res.explanation ||= `Route ${res.best} looks like the best match for you.`;

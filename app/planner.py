@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import agent, ors, photon, route_stats, scenery
+from . import agent, ors, photon, route_stats, scenery, story
 
 Preference = Literal["water", "forest", "views", "quiet"]
 MAX_ROUTES = 4
@@ -71,5 +71,7 @@ def plan(req: PlanRequest) -> dict:
 
 
 def pick(req: PlanRequest, routes: list[dict], has_scenery: bool) -> dict:
-    result = agent.pick_route(req.model_dump(), routes, has_scenery=has_scenery)
+    # A "My location" start is a GPS point; the model only needs a name.
+    asked = req.model_dump() | {"start": story._label(req.start), "end": req.end and story._label(req.end)}
+    result = agent.pick_route(asked, routes, has_scenery=has_scenery)
     return {"best": result["best"], "explanation": result.get("text", "")}

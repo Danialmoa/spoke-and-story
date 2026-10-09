@@ -97,6 +97,15 @@
       </div>
 
       <div class="pane" id="pane-chat" role="tabpanel" aria-labelledby="tab-chat" hidden>
+        <div class="memory">
+          <button class="switch" id="mem-switch" type="button" role="switch" aria-checked="false">Remember me</button>
+          <button class="btn btn-ghost btn-small" type="button" id="mem-forget" hidden>Forget me</button>
+          <p class="memory-note" id="mem-note">Off: I forget you when you leave.</p>
+          <details class="memory-list" id="mem-details" hidden>
+            <summary>What I remember about you</summary>
+            <ul id="mem-list"></ul>
+          </details>
+        </div>
         <div class="thread" id="thread" aria-live="polite"></div>
         <div class="suggest" id="suggest">
           <button type="button">Take me to Varenna along the lake</button>
@@ -153,11 +162,16 @@
         <p id="pick-text"></p>
       </div>
 
+      <div class="box pick" id="brief" aria-live="polite" hidden>
+        <div class="pick-label">Before you go</div>
+        <div class="brief-items" id="brief-items"></div>
+      </div>
+
       <div class="cards" id="cards"></div>
     </div>
   </section>
 
-  <footer class="foot">Built for the DEV Hacktoberfest “Touch Grass” challenge. Routes from OpenStreetMap data, stories from Wikipedia, voice by Kokoro. We count anonymous usage with a rough area (about 10 km), never your exact location.</footer>
+  <footer class="foot">Built for the DEV Hacktoberfest “Touch Grass” challenge. Routes from OpenStreetMap data, stories from Wikipedia, voice by Kokoro. We count anonymous usage with a rough area (about 10 km), never your exact location. With “Remember me” on, the ride buddy keeps what you tell it about your riding and the place names of your rides (never GPS) under a random ID in your browser. “Forget me” deletes all of it.</footer>
 </main>
 
 <section class="ride" id="ride" aria-label="Ride mode" hidden>
@@ -199,5 +213,7 @@
 <script src="js/voice.js"></script>
 <script src="js/ride.js"></script>
 <script src="js/live.js"></script>
+<script src="js/brief.js"></script>
+<script src="js/memory.js"></script>
 <script src="js/logo.js"></script>
 <script src="js/app.js"></script>

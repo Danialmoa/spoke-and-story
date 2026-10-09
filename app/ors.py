@@ -13,6 +13,9 @@ PROFILES = {"road": "cycling-road", "gravel": "cycling-regular", "mtb": "cycling
 LOOP_TRIES = [(seed, 1.0) for seed in range(3)] + [(seed, 0.6) for seed in range(3, 6)]
 # ORS only computes alternative routes up to 100 km of road; roads run ~1.3x the straight line.
 ALTERNATIVES_MAX_KM = 70
+# ORS hung for minutes on alternatives with some weightings (gravel + flat); one route came back in ~11 s.
+ALTERNATIVES_S = 15
+TIMEOUT_S = 30
 
 
 def _headers() -> dict:
@@ -28,7 +31,9 @@ def straight_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * 6371 * asin(sqrt(h))
 
 
-def _directions(bike: str, priority: str, body: dict, options: dict | None = None) -> list[dict]:
+def _directions(
+    bike: str, priority: str, body: dict, options: dict | None = None, timeout: float = TIMEOUT_S
+) -> list[dict]:
     options = dict(options or {})
     if priority == "flat":
         options["profile_params"] = {"weightings": {"steepness_difficulty": 0}}
@@ -42,7 +47,7 @@ def _directions(bike: str, priority: str, body: dict, options: dict | None = Non
     if options:
         payload["options"] = options
     with tracing.span("ORS directions"):
-        r = httpx.post(URL.format(profile=PROFILES[bike]), json=payload, headers=_headers(), timeout=60)
+        r = httpx.post(URL.format(profile=PROFILES[bike]), json=payload, headers=_headers(), timeout=timeout)
     r.raise_for_status()
     return r.json()["features"]
 
@@ -76,5 +81,9 @@ def through(points: list[list[float]], bike: str, priority: str) -> dict:
 def a_to_b(start: tuple[float, float], end: tuple[float, float], bike: str, priority: str) -> list[dict]:
     body = {"coordinates": [[start[1], start[0]], [end[1], end[0]]]}
     if straight_km(start, end) < ALTERNATIVES_MAX_KM:
-        body["alternative_routes"] = {"target_count": 3, "share_factor": 0.6, "weight_factor": 1.6}
+        alternatives = {"target_count": 3, "share_factor": 0.6, "weight_factor": 1.6}
+        try:
+            return _directions(bike, priority, {**body, "alternative_routes": alternatives}, timeout=ALTERNATIVES_S)
+        except httpx.TimeoutException:
+            pass
     return _directions(bike, priority, body)

@@ -21,7 +21,7 @@ CHAT_PROMPT = """You are Spoke & Story, a friendly cycling buddy who plans sceni
 In this chat you find out what ride the user wants, then hand a plan request to the route planner.
 
 You need:
-- start: where the ride starts (a town, address or place like a climbing gym, or "lat,lon")
+- start: where the ride starts (a town, address or place like a climbing gym, or "here" for the user's current location)
 - bike: "road", "gravel" or "mtb"
 - distance_km for a loop, OR end: the place they want to ride to
 Nice to have (guess sensibly if the user doesn't say):
@@ -29,7 +29,7 @@ Nice to have (guess sensibly if the user doesn't say):
 - prefer: any of "water", "forest", "views", "quiet"
 
 Rules:
-- If the user's current location is given and they don't name another start, use it as start and don't ask for it.
+- If the user's current location is known and they don't name another start, use "here" as start and don't ask for it.
 - Ask at most 2 questions in total, one short question per reply. Never ask for something the user already told you.
 - Once you know start, bike and distance (or end), stop asking and plan.
 - Reply with JSON only, one of:
@@ -230,10 +230,11 @@ def parse_json(text: str) -> dict:
 
 
 def chat_step(messages: list[dict], location: str | None = None) -> dict:
-    """Either {"type": "question", "text"} or {"type": "plan", "request"}. location is "lat,lon" from the browser."""
+    """Either {"type": "question", "text"} or {"type": "plan", "request"}. location is "lat,lon" from the browser;
+    the model only learns that it is known, and main.chat swaps it in for a "here" start."""
     conversation = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
     if location:
-        conversation = f"(The user's current location is {location}.)\n\n{conversation}"
+        conversation = f"(The user's current location is known.)\n\n{conversation}"
     if sum(m["role"] == "assistant" for m in messages) >= 2:
         conversation += "\n\n(You already asked 2 questions. Reply with a plan now.)"
     return _complete(CHAT_PROMPT, conversation)

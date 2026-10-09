@@ -31,6 +31,16 @@ def test_chat_reply_without_type_or_text_becomes_a_question(monkeypatch):
     assert client.post("/api/chat", json=messages).json()["type"] == "question"
 
 
+def test_simple_chat_plans_from_here_with_the_position_kept_server_side(monkeypatch):
+    plan = {"type": "plan", "request": {"start": "here", "distance_km": 30, "bike": "gravel"}}
+    monkeypatch.setattr(agent, "chat_step", lambda messages, location: plan)
+    planned = []
+    monkeypatch.setattr(main, "_plan", lambda req, source: planned.append(req) or {"routes": []})
+    body = {"messages": [{"role": "user", "content": "30 km gravel loop"}], "location": "45.85601,9.39437"}
+    assert client.post("/api/chat", json=body).json()["type"] == "plan"
+    assert planned[0].start == "45.85601,9.39437"
+
+
 def test_sentry_events_lose_query_strings_and_bodies():
     event = {"request": {"url": "/api/places", "query_string": "q=Via+Roma+12&near=45.85,9.39", "data": {"start": "x"}}}
     assert tracing._scrub(event, {}) == {"request": {"url": "/api/places"}}
