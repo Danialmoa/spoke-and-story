@@ -154,6 +154,12 @@ button, input { font: inherit; color: inherit; }
 .hint { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--muted); }
 .row { display: flex; gap: 8px; }
 .row .input { flex: 1; min-width: 0; }
+.star { flex: none; width: 54px; appearance: none; border: 3px solid var(--line); background: var(--card); color: var(--ink); box-shadow: 4px 4px 0 var(--shadow); font: 22px/1 var(--mono); cursor: pointer; }
+.star[aria-pressed="true"] { background: var(--coral-soft); }
+.star:disabled { color: var(--muted); box-shadow: none; cursor: default; }
+.chips { display: flex; gap: 8px; overflow-x: auto; padding: 0 4px 4px 0; scrollbar-width: none; }
+.chip { flex: none; appearance: none; border: 2px solid var(--line); background: var(--card); color: var(--ink); box-shadow: 2px 2px 0 var(--shadow); padding: 8px 10px; font: 600 12px/1 var(--mono); white-space: nowrap; cursor: pointer; }
+.chip:active { transform: translate(2px, 2px); box-shadow: none; }
 
 
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--shadow); }
@@ -339,6 +345,13 @@ svg.leaflet-zoom-animated { will-change: transform; }
 .place-label span, .water-label span { display: block; white-space: nowrap; }
 .place-label span { font: 600 10px/1 var(--mono); text-transform: uppercase; letter-spacing: .12em; color: var(--map-ink); text-shadow: 0 0 2px var(--map-paper), 0 0 5px var(--map-paper); }
 .water-label span { font: italic 14px/1 Georgia, "Times New Roman", serif; letter-spacing: .1em; color: var(--map-water-ink); }
+/* The pin menu, a Leaflet popup (Leaflet's own stylesheet isn't loaded). */
+.leaflet-popup { position: absolute; margin-bottom: 12px; }
+.leaflet-popup-content-wrapper { background: var(--card); color: var(--ink); border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--shadow); }
+.leaflet-popup-content { margin: 10px; }
+.leaflet-popup-tip-container { display: none; }
+.pin-menu { display: grid; gap: 8px; }
+.pin-menu b { font: 700 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
 
 /* Ride mode */
 .ride-actions { display: flex; flex-wrap: wrap; gap: 12px; }
@@ -404,6 +417,11 @@ body.riding { overflow: hidden; }
 .settings-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
 .settings-list li { display: grid; gap: 8px; }
 .settings-note { font-size: 11px; color: var(--muted); }
+.settings { max-height: calc(100dvh - 32px - env(safe-area-inset-bottom)); overflow-y: auto; }
+.saved-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 0; padding: 0; list-style: none; }
+.saved-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.saved-list li > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .voice-toggle { display: grid; grid-template-columns: 1fr auto 1fr; width: 100%; padding: 0; border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--shadow); background: var(--paper); color: var(--ink); font: 700 12px/1.25 var(--mono); cursor: pointer; }
 .voice-toggle [data-v] { display: grid; place-items: center; padding: 10px 8px; }
 .voice-toggle-swap { align-self: center; padding: 0 6px; font-size: 16px; }

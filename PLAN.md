@@ -110,8 +110,9 @@ Gemma answers in ~2-3 s, so the guide reacts **while riding** (`/api/live`, `/ap
 
 ### 1b. Memory, history, brief, circles (built 9 Oct)
 
-- [x] **Remember me** (opt-in, anonymous ID): private Backboard assistant per rider; the Ride buddy is a tool-calling
-      agent (search_place, plan_routes, remember). Forget me deletes everything. Memory saved with the free add call.
+- [x] **Remember me** (opt-in) now lives **on the phone** (10 Oct): preferences, rides, told places/topics in
+      localStorage, sent with each request; nothing personal on the server. The Ride buddy is a tool-calling agent
+      (search_place, plan_routes) whose answer carries facts to remember. Forget me clears the phone.
 - [x] **History-aware stories:** told places/facts are remembered; repeat rides get new places, new facts, "round two?".
 - [x] **Before-you-go brief:** news (GDELT; Gemma picks fun/odd items), destination info, arrival weather + sunset,
       water and repair stops. Told by Santa as a story after the intro. GDELT often answers 429: news is rare so far.
@@ -126,6 +127,13 @@ Gemma answers in ~2-3 s, so the guide reacts **while riding** (`/api/live`, `/ap
 - [x] **Bike lanes** priority + "Bike paths %" on cards (only separate cycleways are measurable in ORS).
 - [x] Photon skips province/region results: "Lecco" had landed 5 km up the mountain (likely the crazy Lecco loops).
 - [x] Ride log on the phone (tap the voice status), area stories after 2.5 quiet min, a place every ~2 km, quick reroutes.
+- [x] **Gradual stories** (10 Oct): /api/story writes only the outline (~6 s); each chapter is written live from facts +
+      beat as the rider nears the place. Voice made gradually; Kokoro speaks sentence by sentence (~5-8 s to first sound).
+- [x] **Settings** (gear by the header stone, and in the ride panel): one toggle, ElevenLabs or Kokoro.
+- [x] **Topics engine:** area stories alternate between the nearest untold place and a Gemma-proposed topic about the
+      area (railway history, legends, food…) grounded with Wikipedia full-text search (English, then the local wiki).
+- [x] **Episodes:** a repeat ride continues the last ride's thread and cliffhanger ("round three? Previously…").
+- [x] **Saved places + Home** chips, ☆ button, and hold-the-map pin menu ("Ride here", "Start here", "Save").
 
 ### 2. Launch plan (Friday)
 

@@ -26,7 +26,7 @@ const round1 = (x) => Math.round(x * 10) / 10;
 function resetLive() {
   Object.assign(live, {
     lines: new Map(), comment: null, top: 0, topSaid: 0, lastComment: 0, grind: 0, last: null, offSince: null, rerouting: false,
-    lastReroute: 0, told: [], entered: new Map(), asking: false, quietFrom: { t: Date.now(), km: 0 }, pos: null, odo: 0,
+    lastReroute: 0, told: [], topics: [], entered: new Map(), asking: false, quietFrom: { t: Date.now(), km: 0 }, pos: null, odo: 0,
   });
 }
 
@@ -224,10 +224,13 @@ function watchArea(pos, now) {
   const { planned } = ride;
   const point = pos.map((x) => +x.toFixed(3));
   // Places still ahead count as told too, so an area story never takes a chapter's place.
-  const told = [...live.told, ...ride.stops.filter((s) => !ride.spoken.has(s.key)).map((s) => s.name)].slice(-40);
+  const thisRide = [...live.told, ...ride.stops.filter((s) => !ride.spoken.has(s.key)).map((s) => s.name)].slice(-40);
+  const told = [...new Set([...thisRide, ...earlierTopics()])].slice(0, 60);
   const body = { point, bike: bikeOf(), thread: ride.story?.thread || null, told, context: rideContext() };
   const ask = api.area(body).then((r) => {
-    if (r.place) live.told.push(r.place);
+    const heard = [r.place, r.topic].filter(Boolean);
+    live.told.push(...heard);
+    live.topics.push(...heard);
     rideLog(r.text ? `area story written: ${r.place}` : 'area story: nothing to say');
     return { text: r.text || '', title: r.place || 'Around here' };
   }, () => ({ text: '' })).finally(() => { live.asking = false; });

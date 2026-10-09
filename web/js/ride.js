@@ -111,6 +111,8 @@ function narrate(next, done, left) {
     if (!ride.spoken.has('finish')) {
       ride.spoken.add('finish');
       say(ride.story?.finish || 'You made it. Nice ride!', { title: 'Finish' });
+      // The teaser the next episode recaps: it has to be heard.
+      if (ride.story?.cliffhanger) say(ride.story.cliffhanger, { title: 'Next time' });
       api.event({ event: 'ride_finish', mode: ride.mode, km: ride.route.distance_km, area: areaOf(ride.route.coords[0]) });
       rememberRide();
     }
@@ -135,7 +137,10 @@ function voiceUpcoming() {
   for (const step of ride.steps) {
     if (ride.kms[step.index] > ride.km && ride.kms[step.index] <= ahead) prepare(turnLine(step));
   }
-  if (ride.kms[ride.kms.length - 1] <= ahead) prepare(ride.story?.finish);
+  if (ride.kms[ride.kms.length - 1] <= ahead) {
+    prepare(ride.story?.finish);
+    prepare(ride.story?.cliffhanger);
+  }
 }
 
 function setTurn(arrow, dist, text, kind = '') {

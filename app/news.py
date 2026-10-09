@@ -31,8 +31,9 @@ _last_done = 0.0
 
 
 @lru_cache(maxsize=1024)
-def town_at(lat: float, lon: float) -> tuple[str, str]:
-    """(town, country) at a point, with Photon's reverse geocoder. Raises when Photon fails, so failures aren't cached."""
+def town_at(lat: float, lon: float) -> dict:
+    """{"town", "region", "country", "country_code"} at a point, with Photon's reverse geocoder. Raises when Photon
+    fails, so failures aren't cached."""
     with tracing.span("Photon reverse"):
         r = httpx.get(
             REVERSE_URL,
@@ -42,7 +43,12 @@ def town_at(lat: float, lon: float) -> tuple[str, str]:
         )
     r.raise_for_status()
     p = r.json()["features"][0]["properties"]
-    return p.get("city") or p.get("county") or p["name"], p.get("country", "")
+    return {
+        "town": p.get("city") or p.get("county") or p["name"],
+        "region": p.get("state", ""),
+        "country": p.get("country", ""),
+        "country_code": p.get("countrycode", ""),
+    }
 
 
 def _fetch(town: str, country: str) -> list[str]:
@@ -96,8 +102,9 @@ def headlines(town: str, country: str, wait_s: float) -> list[str]:
 def near(lat: float, lon: float, wait_s: float) -> dict:
     """{"town", "country", "headlines"} for the town at a point; {} when Photon can't name it."""
     try:
-        town, country = town_at(round(lat, 2), round(lon, 2))
+        found = town_at(round(lat, 2), round(lon, 2))
     except (httpx.HTTPError, ValueError, LookupError) as exc:
         log.warning("Photon reverse failed: %s", type(exc).__name__)
         return {}
+    town, country = found["town"], found["country"]
     return {"town": town, "country": country, "headlines": headlines(town, country, wait_s)}

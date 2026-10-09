@@ -46,6 +46,24 @@ function nearestIndex(sorted, value) {
   return lo;
 }
 
+// Everything personal (saved places, what Remember me keeps) lives in this browser only. Storage can be missing or
+// throw (private mode, blocked site data): then it lasts while the page is open.
+function loadLocal(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
+    return value == null ? fallback : JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function saveLocal(key, value) {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
 async function readJson(res) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -70,18 +88,19 @@ const state = {
   thread: [{ role: 'agent', text: 'Tell me where you want to go, like "take me to Varenna along the lake" or "50 km gravel loop". I start from your location, and ask a question or two if I need to.' }],
   chatBusy: false,
   here: null,
-  // The anonymous "Remember me" ID while memory is on, else null (see memory.js).
-  rider: null,
+  remember: false,
 };
 
 const api = {
   plan: (req, delay) => (state.live ? postJson('/api/plan', req) : mockPlan(req, delay)),
-  chat: (messages) => (state.live ? postJson('/api/chat', { messages: messages.slice(-20), location: state.here, rider: state.rider }) : mockChat(messages)),
+  chat: (messages) => (state.live
+    ? postJson('/api/chat', { messages: messages.slice(-20), location: state.here, ...chatMemory() })
+    : mockChat(messages)),
   pick: (req, res) => (state.live
     ? postJson('/api/pick', { request: req, routes: res.routes.map(({ coords, profile, steps, ...stats }) => stats), scenery: res.scenery })
     : mockPick(res)),
   story: (req, route) => (state.live
-    ? postJson('/api/story', { request: req, route: { coords: route.coords, distance_km: route.distance_km, climb_m: route.climb_m }, rider: state.rider })
+    ? postJson('/api/story', { request: req, route: { coords: route.coords, distance_km: route.distance_km, climb_m: route.climb_m }, ...storyMemory(req) })
     : mockStory(route)),
   places: (q, near) => (state.live
     ? getJson(`/api/places?q=${encodeURIComponent(q)}${near ? `&near=${encodeURIComponent(near)}` : ''}`)
@@ -94,14 +113,9 @@ const api = {
   event: (body) => {
     if (state.live) postJson('/api/event', body).catch(() => {});
   },
-  rememberRide: (body) => {
-    if (state.live) postJson('/api/rider/ride', body).catch(() => {});
-  },
-  memories: (rider) => (state.live ? postJson('/api/rider/memories', { rider }) : Promise.resolve({ memories: [] })),
   brief: (req, route) => (state.live
     ? postJson('/api/brief', { start: req.start, end: req.end, route: { coords: route.coords, distance_km: route.distance_km, duration_min: route.duration_min } })
     : mockBrief(route)),
-  forget: (rider) => (state.live ? postJson('/api/rider/forget', { rider }) : Promise.resolve({ ok: true })),
   voice: () => (state.live ? getJson('/api/voice') : Promise.resolve({ elevenlabs: false })),
   weekly: (place, bike, delay) => (state.live
     ? getJson(`/api/weekly?place=${encodeURIComponent(place)}&bike=${encodeURIComponent(bike)}`)
@@ -109,6 +123,7 @@ const api = {
 };
 
 const MY_LOC = 'My location';
+const COORDS = /^\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*$/;
 // Usage events only ever carry a ~10 km area, never an exact position.
 const areaOf = ([lat, lon]) => `${lat.toFixed(1)},${lon.toFixed(1)}`;
 

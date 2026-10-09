@@ -119,19 +119,25 @@ def choose(places: list[dict], total_m: float, n: int, told: set[str] = frozense
     return sorted(chosen, key=lambda p: p["along_m"])
 
 
-def _label(place: str) -> str:
+PINNED = "a spot picked on the map"
+
+
+def _label(place: str, coords_name: str = "your current location") -> str:
     try:
         [float(x) for x in place.split(",")]
-        return "your current location"
+        return coords_name
     except ValueError:
         return place
 
 
-def build(req, route: dict, history: list[dict] | None = None, rides_before: int = 0) -> dict:
-    """The ride's tale, quickly: intro, turn lines, finish, and the places with their beat and facts. Each chapter is
-    written live from those as the rider reaches the place (/api/live "chapter").
+def build(
+    req, route: dict, history: list[dict] | None = None, rides_before: int = 0, last_episode: dict | None = None
+) -> dict:
+    """The ride's tale, quickly: intro, turn lines, finish, cliffhanger, and the places with their beat and facts.
+    Each chapter is written live from those as the rider reaches the place (/api/live "chapter").
     history: what the rider heard on earlier rides, most recent first: [{"place": <Wikipedia title>, "gist": ...}].
-    rides_before: how many earlier rides had this same start and end."""
+    rides_before: how many earlier rides had this same start and end.
+    last_episode: {"thread", "cliffhanger"} of the last ride on this route; this ride is its next episode."""
     told = (history or [])[:HISTORY_MAX]
     gists = {}
     for h in told:
@@ -149,14 +155,18 @@ def build(req, route: dict, history: list[dict] | None = None, rides_before: int
 
     ride = {
         "from": _label(req.start),
-        "to": req.end or "back to the start (it's a loop)",
+        # A pinned destination or Home is "lat,lon": never send coordinates to the model.
+        "to": _label(req.end, PINNED) if req.end else "back to the start (it's a loop)",
         "distance_km": route["distance_km"],
         "climb_m": route["climb_m"],
         "bike": req.bike,
     }
-    if rides_before:
-        ride["ride_number_on_this_route"] = rides_before + 1
-    outline = agent.ride_outline(ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)], told)
+    number = max(rides_before + 1, 2) if last_episode else rides_before + 1
+    if number > 1:
+        ride["ride_number_on_this_route"] = number
+    outline = agent.ride_outline(
+        ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)], told, last_episode
+    )
     beats = outline.get("beats", [])
     stories = []
     for i, (p, f) in enumerate(zip(places, facts)):
@@ -179,6 +189,7 @@ def build(req, route: dict, history: list[dict] | None = None, rides_before: int
         "intro": outline.get("intro", ""),
         "finish": outline.get("finish", ""),
         "thread": outline.get("thread", ""),
+        "cliffhanger": outline.get("cliffhanger", ""),
         "turn_lines": [t for t in outline.get("turn_lines", []) if t.count("{turn}") == 1],
         "stories": stories,
     }

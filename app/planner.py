@@ -76,6 +76,9 @@ def plan(req: PlanRequest) -> dict:
 
 def pick(req: PlanRequest, routes: list[dict], has_scenery: bool) -> dict:
     # A "My location" start is a GPS point; the model only needs a name.
-    asked = req.model_dump() | {"start": story._label(req.start), "end": req.end and story._label(req.end)}
+    asked = req.model_dump() | {
+        "start": story._label(req.start),
+        "end": req.end and story._label(req.end, story.PINNED),
+    }
     result = agent.pick_route(asked, routes, has_scenery=has_scenery)
     return {"best": result["best"], "explanation": result.get("text", "")}

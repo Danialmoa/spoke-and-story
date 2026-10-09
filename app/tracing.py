@@ -14,7 +14,7 @@ def init() -> None:
         dsn=dsn,
         traces_sample_rate=1.0,
         send_default_pii=False,
-        # Stack frames would carry prompts, rider IDs and positions.
+        # Stack frames would carry prompts, what riders told the buddy, and positions.
         include_local_variables=False,
         max_request_body_size="never",
         # Its spans and breadcrumbs keep query strings: the ORS key, typed addresses, GPS points.

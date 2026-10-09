@@ -2,7 +2,6 @@ import logging
 import os
 from pathlib import Path
 from typing import Annotated, Literal
-from uuid import UUID
 
 import httpx
 from dotenv import load_dotenv
@@ -18,7 +17,6 @@ from . import (
     brief,
     buddy,
     limits,
-    memory,
     openmeteo,
     ors,
     photon,
@@ -45,6 +43,8 @@ limits.install(app)
 WEB = Path(__file__).parent.parent / "web"
 Bike = Literal["road", "gravel", "mtb"]
 Text = Annotated[str, Field(max_length=1500)]
+# Facts, place names and topics: they go into prompts, which are billed again on every tool step.
+Short = Annotated[str, Field(max_length=300)]
 Point = Annotated[list[float], Field(min_length=2, max_length=3)]
 
 
@@ -56,8 +56,10 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[Message] = Field(min_length=1, max_length=20)
     location: str | None = None
-    # The anonymous ID from "Remember me"; None = memory off.
-    rider: UUID | None = None
+    # What the rider's phone remembers about them, newest first.
+    known: list[Short] = Field([], max_length=30)
+    # "Remember me" is on: the buddy may answer new facts for the phone to keep.
+    remember: bool = False
 
 
 class PickRequest(BaseModel):
@@ -66,28 +68,27 @@ class PickRequest(BaseModel):
     scenery: bool = True
 
 
-class StoryRequest(BaseModel):
-    request: PlanRequest
-    route: dict
-    rider: UUID | None = None
-
-
-class Rider(BaseModel):
-    rider: UUID
-
-
 class Told(BaseModel):
     place: Annotated[str, Field(max_length=300)]
     gist: Annotated[str, Field(max_length=300)] = ""
 
 
-class RideSummary(BaseModel):
-    """Sent by the page when a ride with Remember me on ends: place names only, never a position."""
+class Episode(BaseModel):
+    thread: Text = ""
+    cliffhanger: Text = ""
 
-    rider: UUID
-    start: Annotated[str, Field(max_length=200)] | None = None
-    end: Annotated[str, Field(max_length=200)] | None = None
-    told: list[Told] = Field([], max_length=12)
+
+class StoryRequest(BaseModel):
+    """Everything about the rider's earlier rides comes from their phone; the server keeps nothing."""
+
+    request: PlanRequest
+    route: dict
+    # What the rider heard on earlier rides, newest first.
+    history: list[Told] = Field([], max_length=30)
+    # Earlier rides with the same start and end.
+    rides_before: int = Field(0, ge=0, le=1000)
+    # The last ride on this route, which this one continues as the next episode.
+    last_episode: Episode | None = None
 
 
 class Event(BaseModel):
@@ -128,8 +129,8 @@ class AreaRequest(BaseModel):
     point: tuple[Annotated[float, Field(ge=-90, le=90)], Annotated[float, Field(ge=-180, le=180)]]
     bike: Bike = "road"
     thread: Text | None = None
-    # Place names already told this ride.
-    told: list[Text] = Field([], max_length=40)
+    # Places and topics told this ride and on earlier rides.
+    told: list[Short] = Field([], max_length=60)
     context: LiveContext = LiveContext()
 
 
@@ -235,14 +236,10 @@ def pick(body: PickRequest):
 
 @app.post("/api/story")
 def ride_story(body: StoryRequest):
-    usage.track("story", memory=body.rider is not None)
-    rides = memory.past_rides(str(body.rider)) if body.rider else []
-    req = body.request
-    history = [told for ride in rides for told in ride["told"]]
-    # Rides are stored with place names only; loops from the same start are different rides.
-    start, end = memory._place(req.start), memory._place(req.end)
-    rides_before = sum(ride["start"] == start and ride["end"] == end for ride in rides) if end else 0
-    return story.build(req, body.route, history=history, rides_before=rides_before)
+    usage.track("story", history=bool(body.history), episode=body.last_episode is not None)
+    history = [told.model_dump() for told in body.history]
+    episode = body.last_episode.model_dump() if body.last_episode else None
+    return story.build(body.request, body.route, history, body.rides_before, episode)
 
 
 @app.post("/api/live")
@@ -282,11 +279,11 @@ def stats():
 
 @app.post("/api/chat")
 def chat(body: ChatRequest):
-    usage.track("chat_message", memory=body.rider is not None)
+    usage.track("chat_message", memory=body.remember)
     messages = [m.model_dump() for m in body.messages]
     if os.environ.get("BACKBOARD_API_KEY"):
         try:
-            reply = buddy.reply(messages, body.location, str(body.rider) if body.rider else None)
+            reply = buddy.reply(messages, body.location, body.known, body.remember)
         except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
             log.warning("Ride buddy agent failed, using the simple chat: %s", type(exc).__name__)
         else:
@@ -305,27 +302,6 @@ def chat(body: ChatRequest):
     result = _plan(req, source="chat")
     text = f"I found {len(result['routes'])} routes. Give me a moment to pick the best one for you."
     return {"type": "plan", "text": text, "request": req.model_dump(), "result": result}
-
-
-@app.post("/api/rider/ride")
-def rider_ride(body: RideSummary):
-    usage.track("rider_ride")
-    memory.remember_ride(str(body.rider), body.model_dump(exclude={"rider"}))
-    return {"ok": True}
-
-
-@app.post("/api/rider/memories")
-def rider_memories(body: Rider):
-    """What the buddy remembers, so the rider can see it. POST keeps the rider ID out of URLs and access logs."""
-    usage.track("rider_memories")
-    return {"memories": memory.memories(str(body.rider))}
-
-
-@app.post("/api/rider/forget")
-def rider_forget(body: Rider):
-    usage.track("rider_forget")
-    memory.forget(str(body.rider))
-    return {"ok": True}
 
 
 @app.get("/api/weekly")

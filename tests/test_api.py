@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app import agent, main, tracing, usage
+from app import agent, limits, main, tracing, usage
 
 client = TestClient(main.app)
 
@@ -44,3 +44,12 @@ def test_simple_chat_plans_from_here_with_the_position_kept_server_side(monkeypa
 def test_sentry_events_lose_query_strings_and_bodies():
     event = {"request": {"url": "/api/places", "query_string": "q=Via+Roma+12&near=45.85,9.39", "data": {"start": "x"}}}
     assert tracing._scrub(event, {}) == {"request": {"url": "/api/places"}}
+
+
+def test_rider_memory_endpoints_are_gone():
+    """Everything personal lives on the rider's phone now; the server keeps no per-rider memory."""
+    rider = {"rider": "6a1f4c3e-2b7d-4e8f-9a0b-1c2d3e4f5a6b"}
+    for path in ("/api/rider/ride", "/api/rider/memories", "/api/rider/forget"):
+        assert client.post(path, json=rider).status_code in (404, 405)
+        assert path not in limits.LIMITED
+    assert not hasattr(main, "memory")

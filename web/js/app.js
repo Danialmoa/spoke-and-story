@@ -9,8 +9,8 @@ function setPriority(v) {
 }
 
 function readForm() {
-  const start = $('#f-start').value.trim();
-  const end = $('#f-end').value.trim();
+  const start = placeOf($('#f-start'));
+  const end = placeOf($('#f-end'));
   return {
     start: start === MY_LOC && state.here ? state.here : start,
     end: end || null,
@@ -24,6 +24,7 @@ function fillForm(req) {
   $('#f-end').value = req.end || '';
   if (req.priority) setPriority(req.priority);
   if (req.bike) setBike(req.bike);
+  renderStar();
 }
 
 async function sendChat(raw) {
@@ -48,6 +49,7 @@ async function sendChat(raw) {
     setLoading(false);
   }
   state.thread.pop();
+  keepFacts(res.remember);
   state.messages.push({ role: 'assistant', content: res.text });
   state.thread.push({ role: 'agent', text: res.text });
   if (res.type === 'plan' && res.result) {
@@ -69,7 +71,6 @@ async function sendChat(raw) {
   }
   state.chatBusy = false;
   renderThread();
-  loadMemories();
 }
 
 async function loadWeek(place, delay) {
@@ -138,6 +139,7 @@ async function boot() {
   wireMemory();
   wireSettings();
   initMap();
+  wireSaved();
   renderThread();
   locate().then((here) => {
     state.here = here;

@@ -2,12 +2,11 @@ import json
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 import sentry_sdk
 
-from . import agent, memory, photon, planner
+from . import agent, photon, planner
 from .planner import PlanRequest
 
 log = logging.getLogger("spokestory.buddy")
@@ -16,12 +15,13 @@ MAX_STEPS = 5
 LOOP_S = 30
 TIMEOUT_S = 20
 MAX_KNOWN = 30
+MAX_FACT_CHARS = 300
+MAX_NEW_FACTS = 5
+LEAKED_CALL = "<|tool_call>"
 HERE = "here"
 # The model never sees the rider's position: it says "here" and plan_routes swaps in the real one. Nothing it could
 # remember or repeat holds a GPS point.
 HERE_WORDS = {HERE, "my location", "current location", "my current location"}
-# Saving a memory takes 1-2 s; the rider doesn't wait for it.
-_saver = ThreadPoolExecutor(2)
 
 PROMPT = """You are Spoke & Story's ride buddy: a friendly cycling buddy who plans bike rides for the rider with tools.
 
@@ -43,10 +43,15 @@ To plan you need a start, a bike ("road", "gravel" or "mtb") and either an end (
 Your final reply is JSON only, either {"text": "<your question>"} or, after planning,
 {"best": "<route id>", "text": "<explanation>"}."""
 
+# Facts come back in the final answer, not through a remember tool: Gemma skipped the tool in 4 of 9 replies, and a
+# plan_routes call after a remember call often came back as raw text instead of a tool call (3 of 8 plans failed).
 REMEMBER_PROMPT = """
-The rider turned on "Remember me". When they tell you something lasting about themselves (their bike, what they like
-or hate on a ride, how far they like to ride...), call remember once per new fact, in a few words. Never remember
-places they ride from or to, or anything already in the list below. Newer facts win over older ones.
+
+The rider turned on "Remember me". Your final reply is still one JSON object, with "remember" added: the new lasting
+facts the rider told you about themselves in their last message (their bike, what they like or hate on a ride, how far
+they like to ride...), a few words each, [] when there are none. Never places they ride from or to, or anything you
+already remember. For example: {"text": "Got it, flat it is! Where do we start?", "remember": ["Hates climbs"]}"""
+KNOWN_PROMPT = """
 
 What you remember about this rider, newest first:
 {known}"""
@@ -88,14 +93,6 @@ TOOLS = [
         },
     },
 ]
-REMEMBER_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "remember",
-        "description": "Save one lasting fact about the rider for future chats, e.g. 'Rides a gravel bike'.",
-        "parameters": {"type": "object", "properties": {"fact": {"type": "string"}}, "required": ["fact"]},
-    },
-}
 
 
 def _post(path: str, body: dict) -> dict:
@@ -111,17 +108,12 @@ def _post(path: str, body: dict) -> dict:
     return reply
 
 
-def _save(rider: str, fact: str) -> None:
-    try:
-        memory.remember(rider, fact)
-    except httpx.HTTPError as exc:
-        log.warning("Couldn't save a memory: %s", type(exc).__name__)
-
-
-def _instructions(messages: list[dict], location: str | None, known: list[str] | None) -> str:
+def _instructions(messages: list[dict], location: str | None, known: list[str], remember: bool) -> str:
     text = PROMPT
-    if known is not None:
-        text += REMEMBER_PROMPT.format(known="\n".join(f"- {k}" for k in known) or "(nothing yet)")
+    if remember:
+        text += REMEMBER_PROMPT
+    if known:
+        text += KNOWN_PROMPT.format(known="\n".join(f"- {k}" for k in known))
     text += "\n\nThe rider's current location is " + ('known: use start "here".' if location else "unknown.")
     if len(messages) > 1:
         text += "\n\nThe chat so far:\n" + "\n".join(f"{m['role']}: {m['content']}" for m in messages[:-1])
@@ -149,7 +141,17 @@ def _plan(args: dict, location: str | None) -> tuple[dict, tuple]:
     return {"start": start, "routes": _routes_for_model(result)}, (req, result)
 
 
-def _run(call: dict, location: str | None, rider: str | None, known: list[str]) -> tuple[dict, tuple | None]:
+def _new_facts(facts, known: list[str]) -> list[str]:
+    """The answer's "remember" list, without blanks and what the phone already knows."""
+    new = []
+    for fact in facts[:MAX_NEW_FACTS] if isinstance(facts, list) else []:
+        fact = str(fact).strip()[:MAX_FACT_CHARS]
+        if fact and fact.lower() not in {k.lower() for k in known + new}:
+            new.append(fact)
+    return new
+
+
+def _run(call: dict, location: str | None) -> tuple[dict, tuple | None]:
     """One tool call -> (output for the model, (request, result) when routes were planned)."""
     name = call["function"]["name"]
     try:
@@ -160,12 +162,6 @@ def _run(call: dict, location: str | None, rider: str | None, known: list[str]) 
             near = photon.geocode(location) if location else None
             places = photon.search(args["text"], (near["lat"], near["lon"]) if near else None)
             return {"places": [p["name"] for p in places]}, None
-        if name == "remember" and rider:
-            fact = str(args["fact"]).strip()
-            if fact and fact.lower() not in {k.lower() for k in known}:
-                _saver.submit(_save, rider, fact)
-                known.insert(0, fact)
-            return {"ok": True}, None
         return {"error": f"Unknown tool: {name}"}, None
     except (ValueError, KeyError, TypeError) as exc:
         return {"error": str(exc)[:300]}, None
@@ -175,28 +171,34 @@ def _run(call: dict, location: str | None, rider: str | None, known: list[str]) 
 
 
 def _answer(text: str | None) -> dict:
+    # Gemma on OpenRouter sometimes writes a follow-up tool call into its answer as raw text instead of calling it.
+    if LEAKED_CALL in (text or ""):
+        return {}
     try:
         return agent.parse_json(text)
     except ValueError:
         return {"text": (text or "").strip()}
 
 
-def reply(messages: list[dict], location: str | None = None, rider: str | None = None) -> dict:
-    """The ride buddy as an agent: Gemma 4 calls search_place / plan_routes (and remember, with Remember me on) in a
-    loop. Same reply shape as the simple chat: {"type": "question", "text"} or {"type": "plan", "text", "request",
-    "result"}; the result already carries the buddy's pick (best, explanation)."""
-    known = memory.preferences(rider)[:MAX_KNOWN] if rider else []
-    tools = TOOLS + [REMEMBER_TOOL] if rider else TOOLS
+def reply(
+    messages: list[dict], location: str | None = None, known: list[str] = (), remember: bool = False, retry: bool = True
+) -> dict:
+    """The ride buddy as an agent: Gemma 4 calls search_place / plan_routes in a loop. Same reply shape as the simple
+    chat: {"type": "question", "text"} or {"type": "plan", "text", "request", "result"}; the result already carries
+    the buddy's pick (best, explanation). With Remember me on, new facts about the rider come back as "remember" for
+    the phone to keep: the server stores nothing.
+    known: what the phone remembers about the rider, newest first."""
+    known = list(known)[:MAX_KNOWN]
     body = {
         # Only the rider's newest words go in as the message; the rest of the chat is in the instructions.
         "content": messages[-1]["content"],
-        "system_prompt": _instructions(messages, location, known if rider else None),
-        "assistant_id": memory.rider_assistant(rider) if rider else agent._assistant(),
+        "system_prompt": _instructions(messages, location, known, remember),
+        "assistant_id": agent._assistant(),
         "llm_provider": "openrouter",
         "model_name": os.environ.get("BACKBOARD_MODEL", "google/gemma-4-26b-a4b-it"),
         # OpenRouter's default upstream took 4-20 s per tool-calling step; the fastest one takes ~2 s.
         "openrouter": {"sort": "latency"},
-        "tools": tools,
+        "tools": TOOLS,
         "memory": "off",
         "stream": False,
     }
@@ -213,7 +215,7 @@ def reply(messages: list[dict], location: str | None = None, rider: str | None =
                     if planned and call["function"]["name"] == "plan_routes":
                         output = {"error": "Already planned"}
                     else:
-                        output, plan = _run(call, location, rider, known)
+                        output, plan = _run(call, location)
                         planned = plan or planned
                     outputs.append({"tool_call_id": call["id"], "output": json.dumps(output, ensure_ascii=False)})
                 step = _post("/threads/tool-outputs", {"thread_id": step["thread_id"], "tool_outputs": outputs})
@@ -230,12 +232,18 @@ def reply(messages: list[dict], location: str | None = None, rider: str | None =
         best = answer.get("best") if answer.get("best") in {r["id"] for r in result["routes"]} else result["best"]
         explanation = answer.get("text") or f"Route {best} looks like the best match for you."
         text = f"I found {len(result['routes'])} routes."
-        return {
+        out = {
             "type": "plan",
             "text": text,
             "request": req.model_dump(),
             "result": {**result, "best": best, "explanation": explanation},
         }
-    if not answer.get("text"):
+    elif answer.get("text"):
+        out = {"type": "question", "text": answer["text"]}
+    elif retry and LEAKED_CALL in (step.get("content") or ""):
+        # Seen in about 1 of 12 plans after a search_place step; a fresh try almost always calls the tool properly.
+        return reply(messages, location, known, remember, retry=False)
+    else:
         raise ValueError("The ride buddy gave no answer")
-    return {"type": "question", "text": answer["text"]}
+    learned = _new_facts(answer.get("remember"), known) if remember else []
+    return {**out, "remember": learned} if learned else out

@@ -13,12 +13,19 @@ Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge: open-source AI tha
   3 routes in a few seconds, then Gemma picks one and tells you why.
 - **Ride buddy:** prefer to chat? Say what you feel like ("50 km gravel loop", "something flat, my legs are dead").
   It asks at most two questions, then plans the ride.
+- **Saved places and Home:** tap ☆ next to the destination to save it, and set Home in ⚙️ Settings (from a saved
+  place or where you are). They show as one-tap chips under the boxes: your daily "Home → climbing gym" is two taps.
+- **Pin on the map:** press and hold the map (right-click on a computer) for "Ride here", "Start here" or "⭐ Save".
+- **Remember me** (Ride buddy tab, off by default): the buddy keeps what you tell it ("hates climbs") and a short log of
+  your rides, on your phone. Ride the same route again and Santa continues the story as the next episode, with new
+  places and the last ride's cliffhanger.
 - **Ride mode:** "Start ride" follows your GPS ("Simulate" fast-forwards, handy at home). You get the real turns only,
   bike-computer stats and an off-route warning. Santa tells a story built from Wikipedia facts about the places along
   the route, in his own voice: ElevenLabs by default (about a second a line), or Kokoro, an open-source voice that
   runs on your phone (one switch in ⚙️ Settings).
-- **Live guide (coming this week):** chapters written just before each place, comments on your speed, a new route
-  when you go off course, and fun stops (old cafés, gelato, historic spots) as you pass them.
+- **Live guide:** each chapter is written as you near its place (a circle around it, on route or off), comments on
+  your speed, a new route when you go off course, fun stops (cafés, gelato, pubs) and stories about the area when it's
+  quiet.
 
 **On-device voice:** if you pick Kokoro (or ElevenLabs isn't available), your browser downloads the voice model
 once: about 92 MB (`Kokoro-82M-v1.0-ONNX`, q8) plus about 22 MB for the ONNX runtime, so roughly 115 MB. Use Wi-Fi
@@ -99,18 +106,25 @@ The start command uses `--no-access-log` on purpose: search text and GPS points 
 
 ## Privacy
 
+- **Everything personal stays on your phone** (in the browser's local storage): saved places and Home, and with
+  Remember me on, what the ride buddy remembers about you and the log of your rides (date, start and destination
+  names, the story places you heard with a one-line gist, the story's thread and cliffhanger). There's no account and
+  no server copy: each request carries only what it needs, and the server doesn't save it. **Forget me** (Ride buddy
+  tab) deletes the memory and ride log; **Delete saved places** (Settings) deletes the places.
+  Safari may clear a website's storage after 7 days without a visit; adding Spoke & Story to the Home Screen keeps it.
+- What goes where, through our server:
+  - Route points, start and destination go to **OpenRouteService** (routing), **Photon** (place search),
+    **Overpass** (scenery, cafés) and **Wikipedia** (story places).
+  - Story text goes to **ElevenLabs** to be spoken (the fast voice, the default). Never your position. Kokoro, the
+    on-device voice, sends nothing.
+  - **Gemma** (through **Backboard**) gets place *names*, never coordinates: start and destination (a pinned spot or
+    Home becomes "a spot picked on the map"), the town and nearby towns for area stories, and the places and topics
+    already told. Chat messages go there too; with Remember me on, so do the things the buddy remembers and the
+    places and gists of your earlier rides. Backboard keeps chat threads under the app's shared assistant.
 - We count anonymous events (page views, rides, plans) with the area rounded to about 10 km. Counts are at `/api/stats`.
 - No exact position, address or IP is logged or stored. Request URLs aren't logged.
 - To limit how often one visitor can call the expensive endpoints, the server keeps the IP address in memory only. It
   is never logged or saved, and it's gone when the server restarts.
-- To plan a route, your start and destination go to the routing and map services listed below. We don't keep them.
-- **Remember me** (in the Ride buddy tab) is off by default. Turned on, your browser makes a random ID (no account) and
-  the ride buddy keeps, on Backboard under that ID: what you tell it about your riding (your bike, "hates climbs",
-  "loves lake views"...) and, after each ride, the place names of your start, destination and the story places you
-  heard, with a one-line gist of each story. Never GPS positions or your IP. "What I remember about you" shows all of
-  it, and **Forget me** deletes all of it from Backboard and drops the ID from your browser.
-- With the fast voice (the default), the words Santa says go to ElevenLabs to be spoken. That's story text only, never
-  your position. Kokoro, the on-device voice, sends nothing.
 - If Sentry is on, it gets timings and token counts, never prompts, query strings or request bodies.
 
 ## Credits and licenses

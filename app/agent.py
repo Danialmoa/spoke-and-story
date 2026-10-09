@@ -74,12 +74,19 @@ rider passes, in order. Write:
   once; it gets replaced by an instruction like "turn left onto Via Roma", so the sentence must stay clear.
   Examples: "Hold that thought, {{turn}}!", "Plot twist: {{turn}}.", "Before I say anything else, {{turn}}."
 - finish: 2-3 sentences that close the tale at the arrival.
+- cliffhanger: one sentence said right after the finish: a teaser that leaves the tale open for the next ride on this
+  route (like "Next time: the miller wants his bell back.").
 If you get "Already told on earlier rides", the rider heard those on past rides: never repeat those facts or jokes.
 A place marked "told_before" is a returning place: give its beat a new angle (a different fact, a "you again?"
 callback, how far the rider has come since). If the ride has ride_number_on_this_route, the rider knows this route:
 greet them as a regular in the intro (like "back on the lake road for round three?").
+If you get "Last episode", this ride is the next episode of a series on this route, and ride_number_on_this_route is
+its episode number. The intro opens like a series recap ("Previously, on the road to <destination>: ..."),
+retelling how the last episode ended (its cliffhanger) in a few words, then says which episode this is and what came of
+that cliffhanger. The thread moves the last one on with a new twist, in new words, and keeps its running joke. The
+cliffhanger is a new one, never the last one again.
 Reply with JSON only:
-{{"thread": "...", "beats": ["..."], "intro": "...", "turn_lines": ["..."], "finish": "..."}}"""
+{{"thread": "...", "beats": ["..."], "intro": "...", "turn_lines": ["..."], "finish": "...", "cliffhanger": "..."}}"""
 
 LIVE_PROMPT = f"""{VOICE}
 
@@ -103,9 +110,22 @@ LIVE_TASKS = {
     "coffee, a gelato or a beer, whatever fits.",
     "reroute": "The rider left the planned route and a new route was just found. Announce it like a plot twist in the "
     "tale, at most 30 words. No blame.",
-    "area": "Tell a short chapter of the tale about where the rider is right now (place), using only the facts in "
-    "base; continue the running joke (thread). 40-80 words, plain spoken English.",
+    "area": "Tell a short chapter of the tale about where the rider is right now, using only the facts in base: about "
+    "the place, or about the topic when there is one (base then comes from the Wikipedia article named in place). "
+    "Continue the running joke (thread). 40-80 words, plain spoken English.",
 }
+
+TOPICS_PROMPT = """You help a cycling guide find things worth telling a rider about the area they are riding through.
+You get the town, its region and country, the towns nearby, and what the rider was already told. Propose 6 varied
+topics about this area that one Wikipedia article answers: history, transport, food, a local legend, nature, a famous
+person, sport, architecture, or what a nearby town is known for. Stay within about 20 km. Never one already told, and
+nothing generic.
+For each topic:
+- topic: a short Wikipedia search query in English with the place name in it, like "Bergamo funicular" or
+  "Casoncelli pasta Bergamo"
+- local: the same search in the country's main language
+- place: the town or area it is about, written as in the query
+Reply with JSON only: {"topics": [{"topic": "...", "local": "...", "place": "..."}]}"""
 
 TASKS = {
     CHAT_PROMPT: "chat",
@@ -113,6 +133,7 @@ TASKS = {
     WEEKLY_PROMPT: "weekly ideas",
     OUTLINE_PROMPT: "story outline",
     LIVE_PROMPT: "live line",
+    TOPICS_PROMPT: "area topics",
 }
 
 
@@ -254,10 +275,11 @@ def _told(history: list[dict]) -> str:
     return f"\n\nAlready told on earlier rides (place: what was told):\n{lines}"
 
 
-def ride_outline(ride: dict, places: list[dict], history: list[dict] = ()) -> dict:
-    """The running tale, one beat per place, intro, turn lines and finish. Chapters are written live, as the rider
-    reaches each place (live_line "chapter"), so a ride only pays for the places it reaches.
-    history: [{"place", "gist"}] the rider heard on earlier rides."""
+def ride_outline(ride: dict, places: list[dict], history: list[dict] = (), last_episode: dict | None = None) -> dict:
+    """The running tale, one beat per place, intro, turn lines, finish and cliffhanger. Chapters are written live, as
+    the rider reaches each place (live_line "chapter"), so a ride only pays for the places it reaches.
+    history: [{"place", "gist"}] the rider heard on earlier rides. last_episode: {"thread", "cliffhanger"} of the last
+    ride on this route, which this one continues."""
     told = {h["place"] for h in history}
     short = []
     for p in places:
@@ -265,7 +287,28 @@ def ride_outline(ride: dict, places: list[dict], history: list[dict] = ()) -> di
         if p["name"] in told:
             short[-1]["told_before"] = True
     content = f"Ride:\n{json.dumps(ride)}\n\nPlaces in order:\n{json.dumps(short, ensure_ascii=False)}{_told(history)}"
+    if last_episode:
+        content += (
+            f"\n\nLast episode:\nThe running story: {last_episode['thread']}\n"
+            f"It ended on this cliffhanger: {last_episode['cliffhanger']}"
+        )
     return _try_complete(OUTLINE_PROMPT, content, 0.9)
+
+
+def area_topics(area: dict, told: list[str]) -> list[dict]:
+    """[{"topic", "local", "place"}]: Wikipedia searches about the rider's area, [] when the model fails.
+    area: {"town", "region", "country", "nearby_towns"}."""
+    content = f"The area:\n{json.dumps(area, ensure_ascii=False)}"
+    if told:
+        content += "\n\nAlready told:\n" + "\n".join(f"- {t}" for t in told)
+    topics = _try_complete(TOPICS_PROMPT, content, 0.9).get("topics")
+    if not isinstance(topics, list):
+        return []
+    return [
+        {"topic": t["topic"], "place": t["place"], "local": str(t.get("local") or "")}
+        for t in topics
+        if isinstance(t, dict) and isinstance(t.get("topic"), str) and isinstance(t.get("place"), str)
+    ]
 
 
 def live_line(event: str, bike: str, context: dict) -> str:

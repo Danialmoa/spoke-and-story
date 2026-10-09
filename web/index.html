@@ -61,10 +61,14 @@
         <form class="form" id="plan-form" novalidate>
           <div class="field">
             <label class="label" for="f-end">Destination</label>
-            <div class="ac">
-              <input class="input input-big" id="f-end" placeholder="e.g. Orobia Climbing, Curno" required autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="f-end-list" aria-expanded="false">
-              <ul class="ac-list" id="f-end-list" role="listbox" hidden></ul>
+            <div class="row">
+              <div class="ac">
+                <input class="input input-big" id="f-end" placeholder="e.g. Orobia Climbing, Curno" required autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="f-end-list" aria-expanded="false">
+                <ul class="ac-list" id="f-end-list" role="listbox" hidden></ul>
+              </div>
+              <button class="star" type="button" id="f-save" aria-pressed="false" aria-label="Save this destination" title="Save this destination" disabled>☆</button>
             </div>
+            <div class="chips" id="f-end-chips" role="group" aria-label="Ride to a saved place" hidden></div>
             <p class="field-msg" id="f-end-msg" hidden>Your bike is ready, your legs are ready… but where to?</p>
           </div>
           <div class="field">
@@ -76,6 +80,7 @@
               </div>
               <button class="btn btn-ghost btn-small" type="button" id="f-locate">Use my location</button>
             </div>
+            <div class="chips" id="f-start-chips" role="group" aria-label="Start from a saved place" hidden></div>
             <p class="field-msg" id="f-start-msg" hidden>Starting from nowhere? Even legends need a start line. Type a town or tap “Use my location”.</p>
           </div>
           <div class="field" role="group" aria-labelledby="f-priority-label">
@@ -174,7 +179,7 @@
     </div>
   </section>
 
-  <footer class="foot">Built for the DEV Hacktoberfest “Touch Grass” challenge. Routes from OpenStreetMap data, stories from Wikipedia, voice by ElevenLabs or, on your device, Kokoro. Story text (never your position) goes to ElevenLabs to be spoken. We count anonymous usage with a rough area (about 10 km), never your exact location. With “Remember me” on, the ride buddy keeps what you tell it about your riding and the place names of your rides (never GPS) under a random ID in your browser. “Forget me” deletes all of it.</footer>
+  <footer class="foot">Built for the DEV Hacktoberfest “Touch Grass” challenge. Routes from OpenStreetMap data, stories from Wikipedia, voice by ElevenLabs or, on your device, Kokoro. Your saved places, your rides and what the ride buddy remembers stay on this phone; each request carries only what it needs and nothing personal is stored on a server. Route points go to OpenRouteService, Photon, Overpass and Wikipedia, story text to ElevenLabs, chat text to Gemma through Backboard. We count anonymous usage with a rough area (about 10 km), never your exact location.</footer>
 </main>
 
 <section class="ride" id="ride" aria-label="Ride mode" hidden>
@@ -221,6 +226,15 @@
       </button>
       <p class="settings-note" id="set-voice-note"></p>
     </li>
+    <li>
+      <span class="label">Saved places</span>
+      <ul class="saved-list" id="saved-list"></ul>
+      <div class="saved-actions">
+        <button class="btn btn-ghost btn-small" type="button" id="home-here">🏠 Set Home to my location</button>
+        <button class="btn btn-ghost btn-small" type="button" id="saved-clear" hidden>Delete saved places</button>
+      </div>
+      <p class="settings-note" id="saved-note">Kept on this phone only. Save a place with ☆ next to the destination, or press and hold the map.</p>
+    </li>
   </ul>
 </section>
 
@@ -236,6 +250,7 @@
 <script src="js/live.js"></script>
 <script src="js/brief.js"></script>
 <script src="js/memory.js"></script>
+<script src="js/saved.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/logo.js"></script>
 <script src="js/app.js"></script>

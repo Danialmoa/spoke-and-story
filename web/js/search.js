@@ -50,6 +50,22 @@ function markMissing(input, missing) {
   $(`#${input.id}-msg`).hidden = !missing;
 }
 
+// A box can show a name ("Home", "📍 Pinned place") while the planner gets the place behind it, often "lat,lon".
+const picked = {};
+
+function setPlace(input, name, value) {
+  input.value = name;
+  picked[input.id] = { name, value };
+  markMissing(input, false);
+  setSearched(false);
+  renderStar();
+}
+
+function placeOf(input) {
+  const text = input.value.trim();
+  return picked[input.id]?.name === text ? picked[input.id].value : text;
+}
+
 function formFilled() {
   const empty = [$('#f-end'), $('#f-start')].filter((input) => !input.value.trim());
   [$('#f-end'), $('#f-start')].forEach((input) => markMissing(input, empty.includes(input)));
@@ -85,6 +101,7 @@ function wirePlaces(input) {
     input.value = items[i].name;
     close();
     setSearched(false);
+    renderStar();
   };
 
   input.addEventListener('input', () => {
