@@ -6,7 +6,8 @@ Bike route planner with a funny storytelling ride guide. Built for the **DEV Hac
 - **Deadline: Sunday 11 Oct 2026.** Winners the week of 12 Oct.
 - Submit one DEV post with tags `#devchallenge #hf26challenge` and the submission template. Writing quality counts most.
 - Bonus points for taking it outside and telling how it went.
-- Last updated: 9 Oct 2026, early morning. Live guide built, launch prep done. Nothing pushed yet (no remote).
+- Last updated: 9 Oct 2026, ~00:30. **Live at https://spoke-and-story.onrender.com** (Render Starter, Oregon).
+  Code: private repo https://github.com/Danialmoa/spoke-and-story (make it public before the DEV post).
 
 ## Where we are
 
@@ -119,24 +120,19 @@ The deployed HTTPS URL is needed for Saturday too: phones only give GPS to `http
 - [x] Rate limit: 30 calls/min per visitor on the expensive endpoints (`app/limits.py`), wired in `main.py`.
 - [x] Deploy check: fresh Python 3.12 install, tests, and Render's start command all fine.
 
-**Launch (needs Danial, about 30-45 min):**
-- [ ] GitHub, **private for now** (make it public before the DEV post): gh has `Danialmoa` active with HTTPS (the
-      Mac's SSH key belongs to the work account, so don't use an SSH remote):
-      `gh repo create Danialmoa/spoke-and-story --private --source=. --remote=origin` then
-      `git remote set-url origin https://github.com/Danialmoa/spoke-and-story.git` and `git push -u origin main`.
-- [ ] Decide first: `region: frankfurt` in `render.yaml` (closer to Italy and to ORS/Photon/Overpass; default is
-      Oregon; can't be changed later).
-- [ ] Render: New → Blueprint → give Render's GitHub app access to the private repo → paste `ORS_API_KEY`,
-      `GEMINI_API_KEY`, `BACKBOARD_API_KEY`, `SENTRY_DSN`. Starter plan is paid from the $50 credit. Every push to
-      `main` redeploys, so don't push during the Saturday ride.
+**Launch (done 9 Oct ~00:30):** private GitHub repo pushed from `Danialmoa` over HTTPS; Render Blueprint deployed
+(Oregon, Starter). Smoke test on the live URL passed: search, plan, pick, story, spots, live line, reroute.
+Rate limit checked live: 429 after 30 calls; a faked `X-Forwarded-For` is caught (limiter uses Cloudflare's
+`CF-Connecting-IP`). Every push to `main` redeploys.
+
+**Still open from the launch list:**
+- [ ] Make the GitHub repo public before the DEV post (`gh repo edit Danialmoa/spoke-and-story --visibility public`).
 - [ ] Sentry (recommended, ~10 min): free personal account → FastAPI project → DSN into `.env` and Render.
       Screenshots for the post: `/api/story` trace (outline, then chapters in parallel), `/api/plan` (Photon → ORS →
       Overpass), the AI/LLM view (Gemma tokens and latency), `/api/live`.
 - [ ] Domain (optional): `spoke-story.tech` or `spoke-and-story.com` (both free on 8 Oct). On Render: Custom Domains →
       add it; at the registrar `ALIAS @ → <service>.onrender.com` (or `A @ 216.24.57.1`) and `CNAME www → <service>.onrender.com`.
-- [ ] Smoke test on the live URL: health, search, routes, pick, Ride buddy, Simulate with Santa and the live guide,
-      `/api/stats`, no URLs in the Render logs. Rate limit: 31 quick POSTs to `/api/plan` → the 31st is 429; then one
-      with a fake `X-Forwarded-For` should still be 429 (if not, read the right-most entry in `limits.py`).
+- [ ] Check the Render logs once: no request URLs, no tracebacks. Ride buddy chat on the live site.
 - [ ] Clean-up: delete the 5 leftover Backboard "Default Assistant"s. Rename the folder if wanted.
 
 ### 3. Ride and record (Saturday)
