@@ -72,7 +72,7 @@ function ensureStory(route) {
     loadVoice();
     const story = api.story(state.req || readForm(), route).catch(() => null);
     stories.set(route, story);
-    story.then((s) => route === currentRoute() && voiceAhead() && prepareRide(route, s));
+    story.then((s) => route === currentRoute() && voiceAhead() && prepare(s?.intro, { first: true }));
   }
   return stories.get(route);
 }
@@ -102,6 +102,8 @@ function keyTurns(route, kms) {
 }
 const WAITING = { title: 'Getting ready', text: 'Your guide is writing the stories for this route…' };
 const STORY_WAIT_MS = 20000;
+// Simulate rides about ten times faster, so it voices further ahead.
+const VOICE_AHEAD_KM = { gps: 3, sim: 5 };
 
 function narrate(next, done, left) {
   const { kms } = ride;
@@ -124,21 +126,16 @@ function narrate(next, done, left) {
   }
 }
 
-// The whole ride's lines are made in the background, in route order: with Kokoro as soon as the story is written,
-// usually before the ride starts (see voiceAhead); with ElevenLabs when the ride starts. Same text = same cached audio.
-function prepareRide(route, story, fromKm = 0) {
-  if (!story) return;
-  loadVoice();
-  const kms = routeKm(route);
-  const steps = keyTurns(route, kms);
-  const lines = steps.map((step) => [kms[step.index], turnLine(step, steps, story)]);
-  for (const s of story.stories) lines.push([kms[Math.min(s.index, kms.length - 1)], s.text]);
-  // The intro is said first, so it is made first: on a phone, waiting behind other lines meant a silent start.
-  prepare(story.intro, { first: true });
-  // ElevenLabs voices a line in about a second, so it only voices lines as they come up: a ride pays for what is said.
-  if (!voiceAhead()) return;
-  lines.sort((a, b) => a[0] - b[0]).forEach(([km, text]) => km >= fromKm && prepare(text));
-  prepare(story.finish);
+// Only what's coming up is voiced: the turns and the finish within VOICE_AHEAD_KM, besides the intro at the start and
+// live lines as they're written. A ride pays (ElevenLabs) or waits (Kokoro) only for what it will say.
+function voiceUpcoming() {
+  // The turn lines change once the story is here.
+  if (ride.storyWait) return;
+  const ahead = ride.km + VOICE_AHEAD_KM[ride.mode];
+  for (const step of ride.steps) {
+    if (ride.kms[step.index] > ride.km && ride.kms[step.index] <= ahead) prepare(turnLine(step));
+  }
+  if (ride.kms[ride.kms.length - 1] <= ahead) prepare(ride.story?.finish);
 }
 
 function setTurn(arrow, dist, text, kind = '') {
@@ -165,6 +162,7 @@ function renderRide(speedKmh) {
     setTurn('⚑', fmtDist(left), 'No more turns. Straight on to the finish.');
   }
   if (!ride.offRoute) narrate(next, done, left);
+  voiceUpcoming();
   $('#r-speed').textContent = speedKmh.toFixed(1);
   $('#r-done').textContent = (ride.kmBase + done).toFixed(1);
   $('#r-left').textContent = left.toFixed(1);
@@ -257,7 +255,6 @@ async function startRide(simulate) {
     ride.story = story;
     ride.storyWait = false;
     setStops();
-    prepareRide(route, story, ride.km);
     if (!voice.busy) showSubtitle(null);
     if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
     sayBrief(route);
@@ -340,10 +337,6 @@ function wireRide() {
     voice.blocked = false;
     unlockAudio();
     renderVoiceStatus();
-  });
-  $('#voice-pick').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) chooseVoice(b.dataset.v);
   });
   $('#ride-voice').addEventListener('click', (e) => {
     ride.voice = !ride.voice;

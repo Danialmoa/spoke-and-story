@@ -85,7 +85,7 @@ function rememberRide() {
   const name = (place) => (place && !COORDS.test(place) ? place : null);
   const told = ride.stops
     .filter((s) => s.type === 'story' && ride.spoken.has(s.key))
-    .map((s) => ({ place: s.name, gist: String(s.beat || s.text || '').slice(0, 150) }));
+    .map((s) => ({ place: s.name, gist: String(s.beat || s.said || '').slice(0, 150) }));
   api.rememberRide({ rider: state.rider, start: name(req.start), end: name(req.end), told: told.slice(0, 12) });
 }
 

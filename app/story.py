@@ -22,6 +22,8 @@ WIKI = "https://en.wikipedia.org"
 USER_AGENT = "SpokeAndStory/0.1 (DEV Hacktoberfest project; https://dev.to/challenges/hf26)"
 # About 4-7 rides of stories; places told longer ago count as fresh again.
 HISTORY_MAX = 30
+# What the live chapter is written from, sent to the page and back.
+FACTS_CHARS = 800
 DULL_SECTIONS = {"See also", "References", "External links", "Further reading", "Notes", "Sources", "Bibliography"}
 
 
@@ -126,11 +128,14 @@ def _label(place: str) -> str:
 
 
 def build(req, route: dict, history: list[dict] | None = None, rides_before: int = 0) -> dict:
-    """The spoken script for ride mode: intro, stories pinned to route points, playful turn lines, finish.
+    """The ride's tale, quickly: intro, turn lines, finish, and the places with their beat and facts. Each chapter is
+    written live from those as the rider reaches the place (/api/live "chapter").
     history: what the rider heard on earlier rides, most recent first: [{"place": <Wikipedia title>, "gist": ...}].
     rides_before: how many earlier rides had this same start and end."""
     told = (history or [])[:HISTORY_MAX]
-    told_names = {h["place"] for h in told}
+    gists = {}
+    for h in told:
+        gists.setdefault(h["place"], h.get("gist") or "")
     coords = route["coords"]
     _, along_m, _ = _geometry(coords)
     samples = [
@@ -139,8 +144,8 @@ def build(req, route: dict, history: list[dict] | None = None, rides_before: int
     with ThreadPoolExecutor(8) as pool:
         articles = [a for near in pool.map(_articles_near, samples) for a in near]
         n = min(MAX_STORIES, max(2, int(route["distance_km"] // KM_PER_STORY)))
-        places = choose(places_along(coords, articles), route["distance_km"] * 1000, n, told_names)
-        facts = list(pool.map(lambda p: (_section if p["name"] in told_names else _summary)(p["name"]), places))
+        places = choose(places_along(coords, articles), route["distance_km"] * 1000, n, set(gists))
+        facts = list(pool.map(lambda p: (_section if p["name"] in gists else _summary)(p["name"]), places))
 
     ride = {
         "from": _label(req.start),
@@ -151,24 +156,29 @@ def build(req, route: dict, history: list[dict] | None = None, rides_before: int
     }
     if rides_before:
         ride["ride_number_on_this_route"] = rides_before + 1
-    script = agent.ride_story(ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)], told)
-    beats = script.get("beats", [])
-    # lat/lon: after a reroute the page pins the stories to the new route.
+    outline = agent.ride_outline(ride, [{"name": p["name"], "facts": f} for p, f in zip(places, facts)], told)
+    beats = outline.get("beats", [])
+    stories = []
+    for i, (p, f) in enumerate(zip(places, facts)):
+        beat = beats[i] if i < len(beats) else ""
+        if not (f or beat):
+            continue
+        # lat/lon: after a reroute the page pins the stories to the new route.
+        place = {
+            "index": p["index"],
+            "place": p["name"],
+            "lat": p["lat"],
+            "lon": p["lon"],
+            "beat": beat,
+            "facts": f[:FACTS_CHARS],
+        }
+        if p["name"] in gists:
+            place["told_before"] = gists[p["name"]] or "a chapter about it"
+        stories.append(place)
     return {
-        "intro": script.get("intro", ""),
-        "finish": script.get("finish", ""),
-        "thread": script.get("thread", ""),
-        "turn_lines": [t for t in script.get("turn_lines", []) if t.count("{turn}") == 1],
-        "stories": [
-            {
-                "index": p["index"],
-                "place": p["name"],
-                "text": text,
-                "beat": beats[i] if i < len(beats) else "",
-                "lat": p["lat"],
-                "lon": p["lon"],
-            }
-            for i, (p, text) in enumerate(zip(places, script["stories"]))
-            if text
-        ],
+        "intro": outline.get("intro", ""),
+        "finish": outline.get("finish", ""),
+        "thread": outline.get("thread", ""),
+        "turn_lines": [t for t in outline.get("turn_lines", []) if t.count("{turn}") == 1],
+        "stories": stories,
     }

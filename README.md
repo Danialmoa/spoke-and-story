@@ -16,7 +16,7 @@ Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge: open-source AI tha
 - **Ride mode:** "Start ride" follows your GPS ("Simulate" fast-forwards, handy at home). You get the real turns only,
   bike-computer stats and an off-route warning. Santa tells a story built from Wikipedia facts about the places along
   the route, in his own voice: ElevenLabs by default (about a second a line), or Kokoro, an open-source voice that
-  runs on your phone (a switch in ride mode).
+  runs on your phone (one switch in ⚙️ Settings).
 - **Live guide (coming this week):** chapters written just before each place, comments on your speed, a new route
   when you go off course, and fun stops (old cafés, gelato, historic spots) as you pass them.
 
@@ -45,9 +45,10 @@ The backend is a small FastAPI app. The page is plain HTML and JavaScript, no bu
 
 Gemma, the open model, writes the guide; ElevenLabs gives it a voice. `POST /api/tts` turns one line into an mp3
 (Flash v2.5, voice "George", a warm storyteller). A line takes about a second, so only the intro is made when the
-ride starts; every other line is made as it comes up, and a ride pays only for what is said. Kokoro, the open-source
-voice that runs in your browser, takes over when the server has no key, the day's budget is spent, ElevenLabs keeps
-failing, or you pick "On-device" in ride mode; Kokoro then voices the rest of the ride ahead, as it's slow on phones.
+ride starts; every other line is made as it comes up (the next few km), and a ride pays only for what is said. Kokoro,
+the open-source voice that runs in your browser, takes over when the server has no key, the day's budget is spent,
+ElevenLabs keeps failing, or you pick it in Settings. Kokoro voices a line sentence by sentence, so Santa starts
+talking after the first sentence instead of waiting for the whole line.
 A line missed without signal (a tunnel) is skipped, apart from turns, which are asked for again.
 
 The key stays on the server. Costs are capped there: 800 characters a line, `ELEVENLABS_DAILY_CHARS` a day for

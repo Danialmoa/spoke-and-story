@@ -77,7 +77,7 @@ button, input { font: inherit; color: inherit; }
 
 /* Header */
 .top { background: var(--header); color: var(--header-ink); overflow-x: clip; }
-.top-inner { --logo-h: clamp(46px, 6.4vw, 66px); max-width: 1240px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
+.top-inner { --logo-h: clamp(46px, 6.4vw, 66px); position: relative; max-width: 1240px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; }
 .brand { display: flex; align-items: center; gap: 12px; }
 .wordmark { font: 800 clamp(38px, 6vw, 60px)/.85 var(--display); letter-spacing: .02em; }
 .logo-bike { position: relative; z-index: 1; padding: 0; border: 0; background: none; cursor: pointer; transform-origin: 28% 74%; }
@@ -388,7 +388,25 @@ body.riding { overflow: hidden; }
 .ride-story.is-min b { margin-bottom: 0; line-height: 24px; }
 .ride-story b { display: block; margin-bottom: 4px; font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--coral-ink); }
 .voice-status { margin: 0; font-size: 11px; color: var(--muted); cursor: pointer; }
-.voice-pick { box-shadow: 2px 2px 0 var(--shadow); }
-.voice-pick button { padding: 7px 6px; font-size: 10px; line-height: 1.2; letter-spacing: .04em; }
 .ride-log { max-height: 40vh; overflow: auto; margin: 6px 0 0; padding-left: 18px; font: 11px/1.45 var(--mono); color: var(--ink); }
 .voice-status.is-blocked { font-size: 14px; font-weight: 700; color: var(--coral-ink); cursor: pointer; }
+
+/* Settings: a sheet with a list of settings, above the page and the ride. */
+/* The pixel gear sits above the stone: at phone width the stone's row has no room left. */
+.settings-gear { position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; background: none; color: var(--header-ink); font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; cursor: pointer; }
+.settings-gear svg { display: block; height: calc(var(--logo-h) * 13 / 29); }
+@media (max-width: 600px) { .settings-word { display: none; } }
+.ride-buttons .settings-open svg { display: block; height: 16px; }
+.settings { position: fixed; z-index: 4000; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: 440px; margin-inline: auto; padding: 14px; background: var(--card); border: 3px solid var(--line); box-shadow: 6px 6px 0 var(--shadow); }
+.settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.settings-title { font-size: 28px; }
+.settings-close { width: 36px; height: 36px; padding: 0; border: 2px solid var(--line); background: var(--paper); color: var(--ink); font: 700 16px/1 var(--mono); cursor: pointer; }
+.settings-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.settings-list li { display: grid; gap: 8px; }
+.settings-note { font-size: 11px; color: var(--muted); }
+.voice-toggle { display: grid; grid-template-columns: 1fr auto 1fr; width: 100%; padding: 0; border: 2px solid var(--line); box-shadow: 3px 3px 0 var(--shadow); background: var(--paper); color: var(--ink); font: 700 12px/1.25 var(--mono); cursor: pointer; }
+.voice-toggle [data-v] { display: grid; place-items: center; padding: 10px 8px; }
+.voice-toggle-swap { align-self: center; padding: 0 6px; font-size: 16px; }
+.voice-toggle[aria-pressed="false"] [data-v="eleven"], .voice-toggle[aria-pressed="true"] [data-v="kokoro"] { background: var(--ink); color: var(--card); }
+.voice-toggle:disabled { cursor: not-allowed; }
+.voice-toggle:disabled [data-v="eleven"] { color: var(--muted); text-decoration: line-through; }

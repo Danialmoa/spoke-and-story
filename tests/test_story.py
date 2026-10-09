@@ -36,15 +36,16 @@ def test_choose_prefers_places_not_told_on_earlier_rides():
     assert [p["name"] for p in chosen] == ["Lakeside", "Old Tower", "Midtown"]
 
 
-def test_a_returning_rider_gets_new_angles_and_a_welcome_back(monkeypatch):
+def test_a_returning_rider_gets_new_places_new_facts_and_a_welcome_back(monkeypatch):
     monkeypatch.setattr(story, "_articles_near", lambda point: ARTICLES)
     monkeypatch.setattr(story, "_summary", lambda title: f"Lead of {title}")
     monkeypatch.setattr(story, "_section", lambda title: f"Another section of {title}")
-    sent = {agent.OUTLINE_PROMPT: [], agent.CHAPTER_PROMPT: []}
+    sent = []
 
     def fake_llm(instructions, content, temperature=0.3):
-        sent[instructions].append(content)
-        return {"intro": "Round three!"} if instructions == agent.OUTLINE_PROMPT else {"text": "A chapter."}
+        assert instructions == agent.OUTLINE_PROMPT
+        sent.append(content)
+        return {"intro": "Round three!", "beats": ["b1", "b2", "b3"]}
 
     monkeypatch.setattr(agent, "_complete", fake_llm)
     history = [
@@ -54,15 +55,15 @@ def test_a_returning_rider_gets_new_angles_and_a_welcome_back(monkeypatch):
     route = {"coords": _route_north(10), "distance_km": 10.0, "climb_m": 120}
     script = story.build(PlanRequest(start="Lecco", end="Midtown"), route, history, rides_before=2)
 
-    assert [s["place"] for s in script["stories"]] == ["Lakeside", "Old Tower", "Midtown"]
-    [outline] = sent[agent.OUTLINE_PROMPT]
+    [outline] = sent
     assert '"ride_number_on_this_route": 3' in outline
     assert "Already told on earlier rides" in outline and "- Old Tower: the bell that fell on the mayor" in outline
     assert '"name": "Old Tower", "facts": "Another section of Old Tower", "told_before": true' in outline
-    tower = next(c for c in sent[agent.CHAPTER_PROMPT] if "Write chapter 2 (Old Tower)" in c)
-    lake = next(c for c in sent[agent.CHAPTER_PROMPT] if "Write chapter 1 (Lakeside)" in c)
-    assert "find a new angle" in tower and "Another section of Old Tower" in tower and "the cheese that won" in tower
-    assert "find a new angle" not in lake and "Lead of Lakeside" in lake
+    # The live chapter gets the new facts and what was told before, so it can find a new angle.
+    lake, tower, midtown = script["stories"]
+    assert (tower["place"], tower["facts"]) == ("Old Tower", "Another section of Old Tower")
+    assert tower["told_before"] == "the bell that fell on the mayor"
+    assert (lake["facts"], "told_before" in lake, "told_before" in midtown) == ("Lead of Lakeside", False, False)
 
 
 def test_section_picks_a_real_section_and_falls_back_to_the_summary(monkeypatch):
@@ -77,58 +78,61 @@ def test_section_picks_a_real_section_and_falls_back_to_the_summary(monkeypatch)
     assert story._section("Old Tower") == "The summary."
 
 
-def test_build_writes_connected_chapters_pinned_to_route_points(monkeypatch):
+def test_build_answers_the_outline_and_each_place_s_facts_without_writing_chapters(monkeypatch):
     monkeypatch.setattr(story, "_articles_near", lambda point: ARTICLES)
-    monkeypatch.setattr(story, "_summary", lambda title: f"Facts about {title}")
-    chapter_calls = []
+    monkeypatch.setattr(story, "_summary", lambda title: f"Facts about {title}. " * 50)
+    calls = []
 
     def fake_llm(instructions, content, temperature=0.3):
-        if instructions == agent.OUTLINE_PROMPT:
-            assert "your current location" in content
-            assert "Already told" not in content and "ride_number_on_this_route" not in content
-            return {
-                "thread": "Chasing the lake legend.",
-                "beats": ["beat one", "beat two", "beat three"],
-                "intro": "This is the journey to the lake!",
-                "turn_lines": ["Plot twist: {turn}.", "No placeholder here.", "{turn} and {turn}"],
-                "finish": "You made it!",
-            }
-        chapter_calls.append(content)
-        if "Write chapter 2 (Old Tower)" in content:
-            raise ValueError("The model did not answer with JSON")
-        return {"text": "A chapter."}
+        calls.append(instructions)
+        assert "your current location" in content
+        assert "Already told" not in content and "ride_number_on_this_route" not in content
+        return {
+            "thread": "Chasing the lake legend.",
+            "beats": ["beat one", "beat two", "beat three"],
+            "intro": "This is the journey to the lake!",
+            "turn_lines": ["Plot twist: {turn}.", "No placeholder here.", "{turn} and {turn}"],
+            "finish": "You made it!",
+        }
 
     monkeypatch.setattr(agent, "_complete", fake_llm)
     route = {"coords": _route_north(10), "distance_km": 10.0, "climb_m": 120}
     script = story.build(PlanRequest(start="45.0,9.0", end="Midtown"), route)
 
+    # One LLM call: chapters are written live, only for the places the rider reaches.
+    assert calls == [agent.OUTLINE_PROMPT]
+    assert (script["thread"], script["intro"], script["finish"]) == (
+        "Chasing the lake legend.",
+        "This is the journey to the lake!",
+        "You made it!",
+    )
     assert script["turn_lines"] == ["Plot twist: {turn}."]
-    # Old Tower's chapter fails, so it's dropped; the others keep their route order.
-    assert [(s["place"], s["text"]) for s in script["stories"]] == [
-        ("Lakeside", "A chapter."),
-        ("Midtown", "A chapter."),
+    assert [(s["place"], s["beat"], round(s["index"] / 10)) for s in script["stories"]] == [
+        ("Lakeside", "beat one", 3),
+        ("Old Tower", "beat two", 5),
+        ("Midtown", "beat three", 7),
     ]
-    # Every chapter sees the whole tale, which is what lets them connect.
-    assert len(chapter_calls) == 3
-    assert all("Chasing the lake legend." in c and "beat three" in c for c in chapter_calls)
-    assert any("Facts about Midtown" in c for c in chapter_calls)
-    assert not any("Already told" in c or "new angle" in c for c in chapter_calls)
+    lake = script["stories"][0]
+    assert lake["facts"].startswith("Facts about Lakeside.") and len(lake["facts"]) == story.FACTS_CHARS
+    assert "text" not in lake
 
 
-def test_a_failed_outline_still_leaves_the_chapters(monkeypatch):
+def test_a_failed_outline_still_leaves_the_places_with_facts(monkeypatch):
     monkeypatch.setattr(story, "_articles_near", lambda point: ARTICLES)
-    monkeypatch.setattr(story, "_summary", lambda title: "")
+    # Without facts or a beat there is nothing to tell about a place.
+    monkeypatch.setattr(story, "_summary", lambda title: "" if title == "Old Tower" else f"Facts about {title}")
 
     def fake_llm(instructions, content, temperature=0.3):
-        if instructions == agent.OUTLINE_PROMPT:
-            raise ValueError("The model did not answer with JSON")
-        return {"text": "A chapter."}
+        raise ValueError("The model did not answer with JSON")
 
     monkeypatch.setattr(agent, "_complete", fake_llm)
     route = {"coords": _route_north(10), "distance_km": 10.0, "climb_m": 120}
     script = story.build(PlanRequest(start="Lecco", end="Midtown"), route)
     assert (script["intro"], script["turn_lines"]) == ("", [])
-    assert len(script["stories"]) == 3
+    assert [(s["place"], s["beat"], s["facts"]) for s in script["stories"]] == [
+        ("Lakeside", "", "Facts about Lakeside"),
+        ("Midtown", "", "Facts about Midtown"),
+    ]
 
 
 def test_an_overloaded_model_gets_one_retry(monkeypatch):
@@ -142,5 +146,5 @@ def test_an_overloaded_model_gets_one_retry(monkeypatch):
 
     monkeypatch.setattr(agent, "_complete", flaky)
     monkeypatch.setattr(agent.time, "sleep", lambda s: None)
-    assert agent._try_complete(agent.CHAPTER_PROMPT, "x", 0.9) == {"text": "A chapter."}
+    assert agent._try_complete(agent.LIVE_PROMPT, "x", 0.9) == {"text": "A chapter."}
     assert len(calls) == 2  # one failure, then success

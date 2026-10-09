@@ -29,10 +29,16 @@ const VOICE_STATUS = {
   failed: "Kokoro couldn't load here, so you'll hear your browser's voice.",
   blocked: '🔊 Your phone blocked the sound. Tap here to turn on Santa.',
 };
-const ENGINES = { eleven: 'ElevenLabs (fast)', kokoro: 'Kokoro (open source, on this device)' };
+const ENGINES = { eleven: 'ElevenLabs (fast)', kokoro: 'Kokoro (on-device, open source)' };
 const ENGINE_KEY = 'spoke-voice';
 // A few ElevenLabs requests at a time keeps the server and the account's concurrency limit happy.
 const ELEVEN_AT_ONCE = 3;
+// Kokoro voices a line sentence by sentence, so it can start after the first one instead of after the whole line
+// (~30 s for a chapter on a phone). Shorter sentences ("Wow!") stay with the next one.
+const MIN_WORDS = 4;
+// Queue lanes: what the line being said needs now, then lines needed soon (live lines, the next turn), then the rest.
+const SOON = 1;
+const NOW = 2;
 
 const VOICE = 'am_santa';
 
@@ -40,6 +46,7 @@ const voice = {
   status: 'idle',
   engine: null,
   elevenOk: null,
+  checking: null,
   note: '',
   offline: false,
   worker: null,
@@ -66,30 +73,48 @@ function wantedEngine() {
   }
 }
 
-// Kokoro takes seconds per line, so it starts on a route's lines as soon as they're written. ElevenLabs costs per
-// character and needs ~1 s, so it waits for the ride to start: riders often look at several routes first.
+// Kokoro takes seconds per line, so it starts on a route's intro and brief as soon as they're written. ElevenLabs costs
+// per character and needs ~1 s, so it waits for the ride to start: riders often look at several routes first.
 const voiceAhead = () => voice.engine === 'kokoro';
+
+function sentences(text) {
+  const out = [];
+  let words = [];
+  for (const word of text.trim().split(/\s+/)) {
+    words.push(word);
+    if (words.length >= MIN_WORDS && /[.!?…]["'”’)]*$/.test(word)) {
+      out.push(words.join(' '));
+      words = [];
+    }
+  }
+  if (words.length && out.length && words.length < MIN_WORDS) out[out.length - 1] += ` ${words.join(' ')}`;
+  else if (words.length) out.push(words.join(' '));
+  return out;
+}
+
+// ElevenLabs voices whole lines: it reads a line better in one go, and takes about a second anyway.
+const lineParts = (text) => (voice.engine === 'kokoro' ? sentences(text) : [text]);
 
 // Lines wait in one queue whatever the engine, so live lines can jump ahead of the ride's other lines (made far in
 // advance) and lines still waiting simply go to Kokoro after a fallback.
-function makeAudio(text, first = false) {
+function makeAudio(text, lane = 0) {
   return new Promise((resolve, reject) => {
-    enqueue({ message: { text, voice: VOICE }, first, resolve, reject });
+    enqueue({ message: { text, voice: VOICE }, lane, resolve, reject });
     nextLine();
   });
 }
 
 function enqueue(job) {
-  const at = job.first ? voice.todo.findIndex((j) => !j.first) : -1;
+  const at = voice.todo.findIndex((j) => j.lane < job.lane);
   voice.todo.splice(at < 0 ? voice.todo.length : at, 0, job);
 }
 
-// A line still waiting its turn moves into the fast lane, e.g. the next turn while live lines are being made.
-function hurry(text) {
-  const i = voice.todo.findIndex((job) => !job.first && job.message.text === text);
+// A clip still waiting its turn moves up a lane, e.g. the next turn while live lines are being made.
+function hurry(text, lane) {
+  const i = voice.todo.findIndex((job) => job.lane < lane && job.message.text === text);
   if (i < 0) return;
   const [job] = voice.todo.splice(i, 1);
-  enqueue({ ...job, first: true });
+  enqueue({ ...job, lane });
 }
 
 // Kokoro's worker gets one line at a time: it can't run two generations at once, nor reorder what it was sent.
@@ -143,8 +168,15 @@ function fallBack(reason) {
   rideLog(`${reason} Switching to Kokoro.`);
   voice.note = 'ElevenLabs unavailable, switched to Kokoro. ';
   startKokoro();
-  // Kokoro is slow on phones, so the rest of the ride is voiced ahead again, as when the rider picks it.
-  if (ride.story && !$('#ride').hidden) prepareRide(ride.planned, ride.story, ride.km);
+  revoice();
+}
+
+// After a switch the new voice makes only what's coming up: the next turns, the finish if near, and the lines already
+// written for the places just ahead.
+function revoice() {
+  if ($('#ride').hidden) return;
+  voiceUpcoming();
+  voiceLiveLines();
 }
 
 function failVoice() {
@@ -188,7 +220,7 @@ function startKokoro() {
   voice.status = 'loading';
   // The empty warm-up line goes ahead of every waiting line: it resolves once the model has loaded.
   voice.ready = new Promise((resolve, reject) => {
-    voice.todo.unshift({ message: {}, first: true, resolve, reject });
+    voice.todo.unshift({ message: {}, lane: NOW, resolve, reject });
     nextLine();
   }).then(() => {
     voice.status = 'ready';
@@ -198,24 +230,33 @@ function startKokoro() {
   return voice.ready;
 }
 
+// Whether this server can speak with ElevenLabs (it has a key and today's budget isn't spent). Asked once.
+function checkEleven() {
+  voice.checking ??= api.voice().then((r) => r.elevenlabs === true, () => false).then((ok) => {
+    voice.elevenOk = ok;
+    renderVoiceStatus();
+    return ok;
+  });
+  return voice.checking;
+}
+
 function loadVoice() {
-  if (!voice.ready) {
-    voice.ready = api.voice().then((r) => r.elevenlabs === true, () => false).then((ok) => {
-      voice.elevenOk = ok;
-      return ok && wantedEngine() === 'eleven' ? useEleven() : startKokoro();
-    });
-  }
+  if (!voice.ready) voice.ready = checkEleven().then((ok) => (ok && wantedEngine() === 'eleven' ? useEleven() : startKokoro()));
   renderVoiceStatus();
 }
 
-// The rider's pick. Lines already made are made again in the new voice, so one ride doesn't switch back and forth.
+// The rider's pick (Settings). Lines already made are made again in the new voice, so one ride doesn't switch back and
+// forth. Before the voice has loaded the pick is only remembered: loadVoice starts it.
 function chooseVoice(engine) {
   try {
     localStorage.setItem(ENGINE_KEY, engine);
   } catch {
     // Private mode: the pick lasts this visit.
   }
-  if (engine === voice.engine) return;
+  if (!voice.engine || engine === voice.engine) {
+    renderVoiceStatus();
+    return;
+  }
   voice.todo.forEach((job) => job.resolve(null));
   voice.todo = [];
   voice.cache = new Map();
@@ -224,27 +265,35 @@ function chooseVoice(engine) {
   rideLog(`voice switched to ${ENGINES[engine]}`);
   if (engine === 'kokoro') startKokoro();
   else useEleven();
-  if (ride.story && !$('#ride').hidden) prepareRide(ride.planned, ride.story, ride.km);
+  revoice();
 }
 
 function renderVoiceStatus() {
   const el = $('#voice-status');
   const text = voice.status === 'ready'
-    ? `Voice: ${ENGINES[voice.engine]} · tap for the ride log · ${voice.made.size} lines ready`
+    ? `Voice: ${ENGINES[voice.engine]} · tap for the ride log · ${voice.made.size} clips ready`
     : VOICE_STATUS[voice.status];
   el.textContent = voice.blocked ? VOICE_STATUS.blocked : voice.note + text;
   el.classList.toggle('is-blocked', voice.blocked);
-  $('#voice-pick').hidden = !voice.elevenOk;
-  $$('#voice-pick button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === (voice.engine || wantedEngine()))));
+  const noEleven = voice.elevenOk === false;
+  const engine = noEleven ? 'kokoro' : voice.engine || wantedEngine();
+  $('#set-voice').setAttribute('aria-pressed', String(engine === 'kokoro'));
+  $('#set-voice').disabled = noEleven;
+  $('#set-voice-note').textContent = noEleven
+    ? "ElevenLabs isn't available right now (no key on this server, or today's voice budget is spent), so Santa speaks with Kokoro."
+    : voice.note + (engine === 'kokoro'
+      ? 'Now: Kokoro, an open-source voice running on this device (~115 MB to download once). Tap for ElevenLabs.'
+      : 'Now: ElevenLabs, about a second a line; story text goes to ElevenLabs, never your position. Tap for Kokoro.');
 }
 
-// Lines wait for the voice to be ready instead of being skipped, so they can be queued as soon as the story is here.
-function prepare(text, { first = false } = {}) {
+// One clip per text, made once, so the same text is never voiced (or paid for) twice. Clips wait for the voice to be
+// ready instead of being skipped, so they can be queued as soon as the story is here.
+function clip(text, lane = 0) {
   if (!text || !voice.ready || voice.status === 'failed') return null;
   if (!voice.cache.has(text)) {
     const { cache } = voice;
     // A line queued for the voice the rider switched away from must not be made (and paid for) after the switch.
-    const audio = voice.ready.then(() => (voice.status === 'ready' && cache === voice.cache ? makeAudio(text, first) : null));
+    const audio = voice.ready.then(() => (voice.status === 'ready' && cache === voice.cache ? makeAudio(text, lane) : null));
     cache.set(text, audio.then((blob) => {
       // Made for the voice the rider just switched away from.
       if (!blob || cache !== voice.cache) return null;
@@ -252,13 +301,29 @@ function prepare(text, { first = false } = {}) {
       renderVoiceStatus();
       return URL.createObjectURL(blob);
     }, () => null));
-  } else if (first) {
-    hurry(text);
+  } else if (lane) {
+    hurry(text, lane);
   }
   return voice.cache.get(text);
 }
 
-const audioReady = (text) => voice.status === 'failed' || voice.made.has(text);
+// A line's first clips go ahead when it's needed soon (first) or right now (now); the rest follow in order.
+// Resolves with the first clip's URL, or null.
+function prepare(text, { first = false, now = false } = {}) {
+  if (!text || !voice.ready || voice.status === 'failed') return null;
+  // How a line is split depends on the engine, known once the server has answered /api/voice.
+  if (!voice.engine) return voice.ready.then(() => prepare(text, { first, now }));
+  const lane = now ? NOW : first ? SOON : 0;
+  const [head, ...rest] = lineParts(text);
+  const url = clip(head, lane);
+  // The second sentence goes with the first: a short first one ends before Kokoro could make the next (7-9 s gaps).
+  rest.forEach((part, i) => clip(part, i ? 0 : lane));
+  return url;
+}
+
+// Ready to play once the first sentence is made: the rest are made while it plays.
+const audioReady = (text) => voice.status === 'failed' || voice.made.has(lineParts(text)[0]);
+const within = (promise, ms) => Promise.race([promise, sleep(ms).then(() => null)]);
 
 // iOS only lets a page play sound after it has played something during a tap, so call this from the ride-start click.
 function unlockAudio() {
@@ -304,25 +369,37 @@ async function drainVoice() {
 // One voice only: switching to the browser voice when Santa was late sounded like two people talking.
 // A story waits for Santa's audio; a turn that isn't ready in time stays on the banner instead.
 // The browser voice is used only when Kokoro can't run at all on this device.
+// A line plays clip by clip; before each one it checks the line is still wanted, so a line that went stale, or whose
+// voice was switched or turned off, stops there.
 async function speakOne(item) {
-  const session = voice.session;
+  const { session } = voice;
+  const title = item.title || 'turn';
   if (voice.status === 'failed' || !voice.ready) {
     await browserSay(item.text);
     return;
   }
-  const asked = Date.now();
-  const url = await Promise.race([prepare(item.text), sleep(item.urgent ? 8000 : 90000).then(() => null)]);
-  if (session !== voice.session) return;
-  if (!url) {
-    rideLog(`skipped, voice not ready after ${Math.round((Date.now() - asked) / 1000)} s: ${item.title || 'turn'}`);
-    return;
+  const wait = item.urgent ? 8000 : 90000;
+  let asked = Date.now();
+  let url = await within(prepare(item.text, { now: true }), wait);
+  const { engine } = voice;
+  const parts = lineParts(item.text);
+  for (let i = 0; i < parts.length; i++) {
+    if (i && engine === voice.engine) {
+      asked = Date.now();
+      url = await within(clip(parts[i], NOW), wait);
+    }
+    if (session !== voice.session) return;
+    const why = engine !== voice.engine ? 'voice switched'
+      : !url ? `voice not ready after ${Math.round((Date.now() - asked) / 1000)} s`
+        : expired(item) ? 'too late' : '';
+    if (why) {
+      rideLog(`${i ? `stopped after ${i} of ${parts.length} sentences` : 'skipped'}, ${why}: ${title}`);
+      return;
+    }
+    if (!i) rideLog(`saying: ${title}`);
+    if (parts[i + 1]) clip(parts[i + 1], NOW);
+    await playUrl(url);
   }
-  if (expired(item)) {
-    rideLog(`dropped, too late: ${item.title || 'turn'}`);
-    return;
-  }
-  rideLog(`saying: ${item.title || 'turn'}`);
-  await playUrl(url);
 }
 
 function playUrl(url) {

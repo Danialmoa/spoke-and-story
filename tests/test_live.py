@@ -27,6 +27,25 @@ def test_live_line_gets_the_moment_and_what_was_already_said(monkeypatch):
     assert usage.COUNTS["live"] == before + 1
 
 
+def test_a_live_chapter_is_written_from_the_place_facts_beat_and_thread(monkeypatch):
+    sent = []
+    monkeypatch.setattr(agent, "_complete", lambda instructions, content, temperature: sent.append(content) or {})
+    context = {"place": "Old Tower", "facts": "Built by monks.", "beat": "The monks hid the map.", "thread": "A quest."}
+
+    client.post("/api/live", json={"event": "chapter", "context": context})
+    assert agent.LIVE_TASKS["chapter"] in sent[0]
+    assert all(f'"{k}": "{v}"' in sent[0] for k, v in context.items())
+    assert "Already told on earlier rides" not in sent[0].replace(agent.LIVE_TASKS["chapter"], "")
+
+    # A place told on an earlier ride: what was told goes in, so the chapter finds a new angle.
+    told = {**context, "told_before": "the bell that fell on the mayor"}
+    client.post("/api/live", json={"event": "chapter", "context": told})
+    assert (
+        "Already told on earlier rides (place: what was told):\n- Old Tower: the bell that fell on the mayor" in sent[1]
+    )
+    assert '"told_before"' not in sent[1]
+
+
 def test_live_answers_an_empty_line_when_the_model_fails(monkeypatch):
     def broken(instructions, content, temperature):
         raise ValueError("The model did not answer with JSON")
@@ -41,6 +60,7 @@ def test_live_rejects_unknown_events_and_oversized_context():
         {**ok, "event": "dance"},
         {**ok, "context": {"said": ["a", "b", "c", "d"]}},
         {**ok, "context": {"base": "x" * 1501}},
+        {**ok, "context": {"facts": "x" * 1501}},
         {**ok, "context": {"local_time": "tea time"}},
     ]:
         assert client.post("/api/live", json=bad).status_code == 422
@@ -131,21 +151,16 @@ def test_reroute_checks_points_and_passes_ors_errors_on(monkeypatch):
     assert client.post("/api/reroute", json={"points": [[45.0, 9.0], [45.1, 9.0]]}).status_code == 502
 
 
-def test_story_gives_the_live_guide_the_thread_beats_and_place_coordinates(monkeypatch):
+def test_story_gives_the_live_guide_the_thread_beats_facts_and_place_coordinates(monkeypatch):
     articles = [{"title": "Lakeside", "lat": 45.027, "lon": 9.005}, {"title": "Midtown", "lat": 45.0631, "lon": 9.003}]
     monkeypatch.setattr(story, "_articles_near", lambda point: articles)
-    monkeypatch.setattr(story, "_summary", lambda title: "")
-
-    def fake_llm(instructions, content, temperature):
-        if instructions == agent.OUTLINE_PROMPT:
-            return {"thread": "Chasing the lake legend.", "beats": ["beat one"]}
-        return {"text": "A chapter."}
-
-    monkeypatch.setattr(agent, "_complete", fake_llm)
+    monkeypatch.setattr(story, "_summary", lambda title: f"About {title}.")
+    outline = {"thread": "Chasing the lake legend.", "beats": ["beat one"]}
+    monkeypatch.setattr(agent, "_complete", lambda instructions, content, temperature: outline)
     route = {"coords": _route_north(10), "distance_km": 10.0, "climb_m": 120}
     script = story.build(PlanRequest(start="Lecco", end="Midtown"), route)
     assert script["thread"] == "Chasing the lake legend."
-    assert [(s["place"], s["beat"], s["lat"], s["lon"]) for s in script["stories"]] == [
-        ("Lakeside", "beat one", 45.027, 9.005),
-        ("Midtown", "", 45.0631, 9.003),
+    assert [(s["place"], s["beat"], s["facts"], s["lat"], s["lon"]) for s in script["stories"]] == [
+        ("Lakeside", "beat one", "About Lakeside.", 45.027, 9.005),
+        ("Midtown", "", "About Midtown.", 45.0631, 9.003),
     ]

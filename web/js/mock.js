@@ -205,9 +205,9 @@ async function mockStory(route) {
     turn_lines: ['Hold that thought, {turn}!', 'Plot twist: {turn}.', 'Before I say anything else, {turn}.', 'Eyes up, {turn}.', 'Quick one: {turn}.'],
     finish: 'You made it back! Your legs deserve a gelato. Now go touch some grass.',
     stories: [
-      { index: at(0.2), place: 'Lecco', text: 'Fun fact: Lecco is where The Betrothed is set, the most famous Italian novel. Every Italian kid had to read it at school, so wave hello to a few million tired readers.' },
-      { index: at(0.45), place: 'Mandello del Lario', text: 'Coming up: Mandello del Lario, home of Moto Guzzi motorcycles since 1921. Yes, they have engines. No, you cannot borrow one for the next climb.' },
-      { index: at(0.7), place: 'Varenna', text: 'Across the water is Varenna, pastel houses and people eating gelato by the lake. While you climb. Rude, honestly.' },
+      { index: at(0.2), place: 'Lecco', beat: 'Santa checks The Betrothed for clues, the novel every Italian kid had to read at school.', facts: 'Lecco is where The Betrothed is set, the most famous Italian novel.' },
+      { index: at(0.45), place: 'Mandello del Lario', beat: 'A Moto Guzzi rider swears he saw the glasses go by at full speed.', facts: 'Mandello del Lario is home of Moto Guzzi motorcycles since 1921.' },
+      { index: at(0.7), place: 'Varenna', beat: 'Across the water, Varenna eats gelato while you climb. Rude, honestly.', facts: 'Varenna is a village of pastel houses on the eastern shore of Lake Como.' },
     ],
   };
 }
@@ -217,7 +217,7 @@ async function mockLive({ event, context: c }) {
   const speed = Math.round(c.speed_kmh);
   return {
     text: {
-      chapter: `Live from ${c.place}, at ${speed} km/h with ${Math.round(c.km_left)} km to go. ${(c.base || '').split('. ')[0]}.`,
+      chapter: `Live from ${c.place}, at ${speed} km/h with ${Math.round(c.km_left)} km to go. ${c.facts} ${c.beat}`,
       speed: c.reason === 'grind'
         ? `${c.grade_pct} percent and you're still turning the pedals. Respect.`
         : `${speed} km/h! New top speed. Even my sleigh needs a permit for that.`,

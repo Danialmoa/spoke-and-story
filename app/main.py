@@ -102,7 +102,10 @@ class Event(BaseModel):
 class LiveContext(BaseModel):
     place: Text | None = None
     beat: Text | None = None
+    # base: a spot's note or an area's facts. facts and told_before: a chapter's, from /api/story.
     base: Text | None = None
+    facts: Text | None = None
+    told_before: Text | None = None
     thread: Text | None = None
     reason: Literal["top_speed", "grind"] | None = None
     speed_kmh: float | None = None

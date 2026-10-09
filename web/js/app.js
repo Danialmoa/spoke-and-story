@@ -136,6 +136,7 @@ async function boot() {
   wireRide();
   wireLogo();
   wireMemory();
+  wireSettings();
   initMap();
   renderThread();
   locate().then((here) => {

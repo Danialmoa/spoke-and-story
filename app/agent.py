@@ -1,10 +1,8 @@
 import json
 import logging
 import os
-import random
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 
 import httpx
@@ -69,8 +67,8 @@ Plan the spoken story for this whole ride: one continuous, funny tale told in ch
 rider passes, in order. Write:
 - thread: 2-3 sentences on the running story that ties the ride together (a quest, a rivalry, a legend the rider is
   chasing...). Keep it light, about this rider and this route.
-- beats: for each place, in order, one sentence on what happens in that chapter and how it follows from the one before.
-  Use the place facts you are given.
+- beats: for each place, in order, one sentence on what happens in that chapter and how it follows from the one before,
+  said to the rider (it may be read aloud as it is). Use the place facts you are given.
 - intro: 3-4 sentences that start the tale, like "This is the journey to ...". Joke about the distance or climbing.
 - turn_lines: 6 short, playful ways to announce a turn (under 10 words each). Each one must contain {{turn}} exactly
   once; it gets replaced by an instruction like "turn left onto Via Roma", so the sentence must stay clear.
@@ -83,26 +81,6 @@ greet them as a regular in the intro (like "back on the lake road for round thre
 Reply with JSON only:
 {{"thread": "...", "beats": ["..."], "intro": "...", "turn_lines": ["..."], "finish": "..."}}"""
 
-CHAPTER_PROMPT = f"""{VOICE}
-
-You are telling one continuous tale over a bike ride, one chapter per place. Write the chapter you are asked for, to say
-as the rider rolls past that place: 4-6 sentences (60-100 words). Pick up from the previous beat, use this place's
-facts, and end with a hook that leads to the next beat. Bring it back to the ride: the climb, the speed, their legs.
-Use only facts from the given Wikipedia text; never invent history, dates or numbers.
-If you get "Already told on earlier rides", the rider heard those on past rides: never repeat those facts or jokes.
-If this place was told before, find a new angle: a different fact from the given text, a "you again?" callback, or how
-far the rider has come since.
-Reply with JSON only: {{"text": "..."}}"""
-# Chapters are written in parallel, so a different flavour per chapter keeps them from sounding alike.
-FLAVOURS = [
-    "a joke",
-    "a playful dare",
-    "a surprising fact told like gossip",
-    "a bit of drama",
-    "a cheeky compliment",
-    "a tiny mystery",
-]
-
 LIVE_PROMPT = f"""{VOICE}
 
 You are riding along with the rider right now and say one line, live. You get what you have to say, the bike and the
@@ -112,9 +90,11 @@ never read out a list of stats. Never repeat a line, a joke or an opening from "
 Use only the facts you are given; never invent history, dates or numbers. Plain spoken English: no emojis, no lists.
 Reply with JSON only: {{"text": "..."}}"""
 LIVE_TASKS = {
-    "chapter": "Tell the chapter of the tale for this place (place) as the rider rolls up to it. Rewrite the "
-    "prepared chapter (base) for this moment: keep its facts and the running joke (thread), follow its beat. "
-    "50-90 words, and end with a hook to what comes next.",
+    "chapter": "Tell the chapter of the tale for this place (place) as the rider rolls up to it. Use its Wikipedia "
+    "facts (facts), follow its beat (beat) and keep the running joke (thread); bring it back to the ride. 50-90 words, "
+    'and end with a hook to what comes next. If you get "Already told on earlier rides", the rider heard about this '
+    'place on an earlier ride: never repeat that; find a new angle (a different fact, a "you again?" callback, how far '
+    "they have come since).",
     "top_speed": "The rider just hit a new top speed. React in 1-2 sentences, at most 30 words: celebrate it and wink "
     "at safety without lecturing.",
     "grind": "The rider is crawling up a steep climb. Cheer them on in 1-2 sentences, at most 30 words.",
@@ -132,7 +112,6 @@ TASKS = {
     PICK_PROMPT: "pick route",
     WEEKLY_PROMPT: "weekly ideas",
     OUTLINE_PROMPT: "story outline",
-    CHAPTER_PROMPT: "story chapter",
     LIVE_PROMPT: "live line",
 }
 
@@ -275,28 +254,10 @@ def _told(history: list[dict]) -> str:
     return f"\n\nAlready told on earlier rides (place: what was told):\n{lines}"
 
 
-def _chapter(ride: dict, outline: dict, places: list[dict], i: int, flavour: str, history: list[dict]) -> str:
-    beats = outline.get("beats", [])
-    plan = [
-        {"chapter": n + 1, "place": p["name"], "beat": beats[n] if n < len(beats) else ""} for n, p in enumerate(places)
-    ]
-    place = places[i]["name"]
-    task = f"Write chapter {i + 1} ({place}). Flavour: {flavour}."
-    if any(h["place"] == place for h in history):
-        task += f" You told {place} on an earlier ride: find a new angle."
-    content = (
-        f"Ride:\n{json.dumps(ride)}\n\nThe tale: {outline.get('thread', '')}\n\n"
-        f"Chapters:\n{json.dumps(plan, ensure_ascii=False)}{_told(history)}\n\n"
-        f"{task}\nFacts about {place}:\n{places[i]['facts']}"
-    )
-    return _try_complete(CHAPTER_PROMPT, content, 0.9).get("text", "")
-
-
-def ride_story(ride: dict, places: list[dict], history: list[dict] = ()) -> dict:
-    """An outline first (the running tale, one beat per place, intro, turn lines, finish), then all chapters in
-    parallel, each seeing the whole outline so they connect. One call writing everything took ~90 s.
-    history: [{"place", "gist"}] the rider heard on earlier rides. stories[i] belongs to places[i] ("" if that one
-    failed)."""
+def ride_outline(ride: dict, places: list[dict], history: list[dict] = ()) -> dict:
+    """The running tale, one beat per place, intro, turn lines and finish. Chapters are written live, as the rider
+    reaches each place (live_line "chapter"), so a ride only pays for the places it reaches.
+    history: [{"place", "gist"}] the rider heard on earlier rides."""
     told = {h["place"] for h in history}
     short = []
     for p in places:
@@ -304,26 +265,20 @@ def ride_story(ride: dict, places: list[dict], history: list[dict] = ()) -> dict
         if p["name"] in told:
             short[-1]["told_before"] = True
     content = f"Ride:\n{json.dumps(ride)}\n\nPlaces in order:\n{json.dumps(short, ensure_ascii=False)}{_told(history)}"
-    outline = _try_complete(OUTLINE_PROMPT, content, 0.9)
-    # A fresh order each ride, so the same place doesn't always get the same kind of chapter.
-    flavours = random.sample(FLAVOURS, len(FLAVOURS))
-
-    def write(i: int) -> str:
-        return _chapter(ride, outline, places, i, flavours[i % len(flavours)], history)
-
-    # Four at a time: all eight at once made Gemma's free tier answer "overloaded" more often.
-    with ThreadPoolExecutor(4) as pool:
-        stories = list(pool.map(write, range(len(places))))
-    return {**outline, "stories": stories}
+    return _try_complete(OUTLINE_PROMPT, content, 0.9)
 
 
 def live_line(event: str, bike: str, context: dict) -> str:
-    """One line said while riding ("" when the model fails; the page then plays its pre-written line)."""
+    """One line said while riding ("" when the model fails). For a chapter, context["told_before"] is what the rider
+    heard about this place on an earlier ride."""
     task = LIVE_TASKS[(context.get("reason") or "top_speed") if event == "speed" else event]
+    skip = {"said", "told_before"}
     moment = {
-        k: round(v, 1) if isinstance(v, float) else v for k, v in context.items() if v is not None and k != "said"
+        k: round(v, 1) if isinstance(v, float) else v for k, v in context.items() if v is not None and k not in skip
     }
     content = f"{task}\n\nBike: {bike}\n\nThe moment:\n{json.dumps(moment, ensure_ascii=False)}"
+    if context.get("told_before"):
+        content += _told([{"place": context.get("place") or "this place", "gist": context["told_before"]}])
     if context.get("said"):
         content += "\n\nAlready said:\n" + "\n".join(context["said"])
     text = _try_complete(LIVE_PROMPT, content, 0.9).get("text")

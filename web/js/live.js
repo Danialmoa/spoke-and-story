@@ -1,5 +1,6 @@
-// The live guide: each chapter rewritten just before its place, fun spots, area stories, speed comments and reroutes.
-// Gemma writes a line in ~2 s but Kokoro needs 5-15 s to voice it (ElevenLabs ~1 s), so lines are asked for about a minute early.
+// The live guide: each chapter written just before its place, fun spots, area stories, speed comments and reroutes.
+// Gemma writes a line in ~2 s and Kokoro needs a few seconds for its first sentence (ElevenLabs ~1 s for a line), so
+// lines are asked for about a minute early.
 const live = {};
 const spotsCache = new WeakMap();
 // Places are told inside a circle around the place itself, so they work on route, off route and after a reroute.
@@ -9,7 +10,8 @@ const STORY_RADIUS_KM = 0.8;
 const ROUTE_MARGIN_KM = 0.5;
 const SPOT_RADIUS_KM = 0.15;
 const STALE_KM = { story: 1, spot: 0.5 };
-// Kokoro voices ~2 words a second here (a 70-word chapter takes ~30 s), so the Simulate crawl waits that long at most.
+// How long Simulate crawls for a live line still being written or voiced, and how long a rider inside a place's circle
+// waits for its chapter before hearing the short line instead.
 const LIVE_WAIT_MS = 30000;
 const COMMENT_GAP_MS = 120000;
 const QUIET_NEAR_KM = 0.5;
@@ -24,7 +26,7 @@ const round1 = (x) => Math.round(x * 10) / 10;
 function resetLive() {
   Object.assign(live, {
     lines: new Map(), comment: null, top: 0, topSaid: 0, lastComment: 0, grind: 0, last: null, offSince: null, rerouting: false,
-    lastReroute: 0, told: [], entered: new Set(), asking: false, quietFrom: { t: Date.now(), km: 0 }, pos: null, odo: 0,
+    lastReroute: 0, told: [], entered: new Map(), asking: false, quietFrom: { t: Date.now(), km: 0 }, pos: null, odo: 0,
   });
 }
 
@@ -71,7 +73,8 @@ function setStops() {
   const stories = (ride.story?.stories || []).map((s) => {
     const [lat, lon] = s.lat == null ? coords[Math.min(s.index, coords.length - 1)] : [s.lat, s.lon];
     const radius = Math.max(STORY_RADIUS_KM, kmToRoute([lat, lon], coords) + ROUTE_MARGIN_KM);
-    return { type: 'story', key: `story-${s.place}`, name: s.place, text: s.text, beat: s.beat || null, km: kmAt(s.index), lat, lon, radius };
+    const told = s.told_before || null;
+    return { type: 'story', key: `story-${s.place}`, name: s.place, beat: s.beat, facts: s.facts, told, km: kmAt(s.index), lat, lon, radius };
   });
   const spots = ride.spots.map((s) => ({ ...s, type: 'spot', key: `spot-${s.name}`, km: kmAt(s.index), radius: SPOT_RADIUS_KM }))
     .filter((s) => !stories.some((t) => Math.abs(t.km - s.km) < QUIET_NEAR_KM));
@@ -89,33 +92,56 @@ function askLive(stop) {
   const line = { text: null, waitFrom: null };
   live.lines.set(stop.key, line);
   const story = stop.type === 'story';
-  // With Kokoro the pre-written chapter is voiced first: it's the fallback, and a slow phone must never leave it unvoiced.
-  if (story && voiceAhead()) prepare(stop.text, { first: true });
+  const context = story
+    ? { place: stop.name, beat: stop.beat || null, facts: stop.facts || null, told_before: stop.told }
+    : { place: stop.name, base: stop.note };
+  const ask = () => liveLine(story ? 'chapter' : 'spot', context);
   rideLog(`asked live line: ${stop.name}`);
-  liveLine(story ? 'chapter' : 'spot', { place: stop.name, beat: stop.beat, base: story ? stop.text : stop.note }).then((text) => {
+  // The chapter is the place's story, so a failed one is asked for once more if the place isn't told yet.
+  ask().then((text) => {
+    if (text || !story || ride.spoken.has(stop.key)) return text;
+    rideLog(`live line failed, asking again: ${stop.name}`);
+    return ask();
+  }).then((text) => {
     line.text = text;
     rideLog(`live line ${text ? 'written' : 'failed'}: ${stop.name}`);
     if (!ride.spoken.has(stop.key)) prepare(text, { first: true });
   });
 }
 
-// The live line only once Santa has voiced it, so a chapter is never told twice.
+// The live line only once Santa has voiced it (its first sentence), so a place is never told twice.
 function readyLine(stop) {
   const text = live.lines.get(stop.key)?.text;
   return text && audioReady(text) ? text : null;
 }
 
-// A chapter falls back to the pre-written one; a spot is told only if its line was voiced in time.
+// When a chapter couldn't be written or voiced in time, so no place goes silent. /api/story leaves out places with
+// neither a beat nor facts.
+const shortLine = (stop) => `We're passing ${stop.name}: ${stop.beat || sentences(stop.facts)[0]}`;
+
+// A chapter waits up to LIVE_WAIT_MS inside the circle for its live line, then the short line is said instead.
+// A spot is told only if its line was voiced in time.
 function tell(stop) {
+  const line = live.lines.get(stop.key);
   const text = readyLine(stop);
   if (stop.type === 'spot' && !text) {
-    if (live.lines.get(stop.key)?.text === '') ride.spoken.add(stop.key);
+    if (line?.text === '') ride.spoken.add(stop.key);
     return;
   }
+  if (!text && ride.voice && pending(line) && Date.now() - live.entered.get(stop.key) < LIVE_WAIT_MS) return;
   ride.spoken.add(stop.key);
   live.told.push(stop.name);
-  rideLog(`queued ${text ? 'live' : 'pre-written'}: ${stop.name}`);
-  say(text || stop.text, { title: stop.name, stale: farFrom([stop.lat, stop.lon], stop.radius + STALE_KM[stop.type]) });
+  stop.said = text || shortLine(stop);
+  rideLog(`queued ${text ? 'live' : 'short line'}: ${stop.name}`);
+  say(stop.said, { title: stop.name, stale: farFrom([stop.lat, stop.lon], stop.radius + STALE_KM[stop.type]) });
+}
+
+// After a voice switch: the lines already written for places just ahead, in the new voice.
+function voiceLiveLines() {
+  for (const stop of ride.stops) {
+    const text = live.lines.get(stop.key)?.text;
+    if (text && due(stop) && live.pos && kmTo(live.pos, stop) < stop.radius + leadKm()) prepare(text, { first: true });
+  }
 }
 
 function narrateStops(pos) {
@@ -125,7 +151,7 @@ function narrateStops(pos) {
   for (const { stop, km } of near) {
     askLive(stop);
     if (km < stop.radius && !live.entered.has(stop.key)) {
-      live.entered.add(stop.key);
+      live.entered.set(stop.key, Date.now());
       rideLog(`entered circle: ${stop.name}`);
     }
     if (km < stop.radius) tell(stop);
