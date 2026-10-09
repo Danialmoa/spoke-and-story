@@ -369,6 +369,10 @@ body.riding { overflow: hidden; }
 .ac-list li + li { border-top: 1px solid var(--grid); }
 .ac-list li[aria-selected="true"], .ac-list li:hover { background: var(--sel-bg); }
 .ride-story { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 1000; max-width: 640px; margin: 0 auto; padding: 12px 14px; background: var(--card); border: 3px solid var(--line); box-shadow: 4px 4px 0 var(--shadow); font: 500 14px/1.45 var(--mono); }
+.ride-story { padding-right: 52px; }
+.ride-story-min { position: absolute; top: 6px; right: 6px; width: 36px; height: 36px; padding: 0; border: 2px solid var(--line); background: var(--paper); color: var(--ink); font: 700 18px/1 var(--mono); cursor: pointer; }
+.ride-story.is-min p { display: none; }
+.ride-story.is-min b { margin-bottom: 0; line-height: 24px; }
 .ride-story b { display: block; margin-bottom: 4px; font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--coral-ink); }
 .voice-status { margin: 0; font-size: 11px; color: var(--muted); }
 .voice-status.is-blocked { font-size: 14px; font-weight: 700; color: var(--coral-ink); cursor: pointer; }

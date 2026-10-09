@@ -51,11 +51,11 @@ def test_plan_keeps_loops_closest_to_distance_and_ranks_by_priority(monkeypatch)
     assert [r["duration_min"] for r in fast["routes"]] == [120, 140, 150, 90]
 
 
-def test_pick_flags_missing_scenery_and_falls_back_to_a_real_route(monkeypatch):
+def test_pick_falls_back_to_a_real_route(monkeypatch):
     monkeypatch.setattr(agent, "_complete", lambda instructions, content: {"best": "Z", "text": "Go with Z!"})
     result = planner.pick(PlanRequest(start="Lecco"), [_route(id="A"), _route(id="B")], has_scenery=False)
     assert result["best"] == "A"
-    assert result["explanation"] == f"{planner.NO_SCENERY_NOTE} Go with Z!"
+    assert result["explanation"] == "Go with Z!"
 
 
 def test_parse_json_handles_code_fences():

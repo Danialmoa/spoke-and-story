@@ -301,6 +301,12 @@ function wireRide() {
   $('#ride-start').addEventListener('click', () => startRide(false));
   $('#ride-sim').addEventListener('click', () => startRide(true));
   $('#ride-end').addEventListener('click', endRide);
+  $('#ride-story-min').addEventListener('click', (e) => {
+    const min = $('#ride-story').classList.toggle('is-min');
+    e.currentTarget.textContent = min ? '+' : '–';
+    e.currentTarget.setAttribute('aria-expanded', String(!min));
+    e.currentTarget.setAttribute('aria-label', min ? 'Show subtitles' : 'Hide subtitles');
+  });
   $('#voice-status').addEventListener('click', () => {
     if (!voice.blocked) return;
     voice.blocked = false;

@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 from . import agent, ors, photon, route_stats, scenery
 
 Preference = Literal["water", "forest", "views", "quiet"]
-NO_SCENERY_NOTE = "(OpenStreetMap scenery data was unavailable, so water, forest and views were not compared.)"
 MAX_ROUTES = 4
 DISTANCE_TOLERANCE = 0.25
 RANKING = {
@@ -73,6 +72,4 @@ def plan(req: PlanRequest) -> dict:
 
 def pick(req: PlanRequest, routes: list[dict], has_scenery: bool) -> dict:
     result = agent.pick_route(req.model_dump(), routes, has_scenery=has_scenery)
-    text = result.get("text", "")
-    explanation = text if has_scenery else f"{NO_SCENERY_NOTE} {text}"
-    return {"best": result["best"], "explanation": explanation}
+    return {"best": result["best"], "explanation": result.get("text", "")}
