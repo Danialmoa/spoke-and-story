@@ -130,8 +130,8 @@ Rate limit checked live: 429 after 30 calls; a faked `X-Forwarded-For` is caught
 - [ ] Sentry (recommended, ~10 min): free personal account → FastAPI project → DSN into `.env` and Render.
       Screenshots for the post: `/api/story` trace (outline, then chapters in parallel), `/api/plan` (Photon → ORS →
       Overpass), the AI/LLM view (Gemma tokens and latency), `/api/live`.
-- [ ] Domain (optional): `spoke-story.tech` or `spoke-and-story.com` (both free on 8 Oct). On Render: Custom Domains →
-      add it; at the registrar `ALIAS @ → <service>.onrender.com` (or `A @ 216.24.57.1`) and `CNAME www → <service>.onrender.com`.
+- [ ] Domain `spoke-and-story.tech` (bought 9 Oct at name.store, DNS at orderbox-dns). In `render.yaml` `domains`.
+      At the registrar: `A @ 216.24.57.1` and `CNAME www → spoke-and-story.onrender.com`; then Verify on Render.
 - [ ] Check the Render logs once: no request URLs, no tracebacks. Ride buddy chat on the live site.
 - [ ] Clean-up: delete the 5 leftover Backboard "Default Assistant"s. Rename the folder if wanted.
 

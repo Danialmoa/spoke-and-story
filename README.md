@@ -5,7 +5,7 @@ Santa tells you one silly, connected story about the places you pass.
 
 Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge: open-source AI that gets you outside.
 
-**Try it:** DEMO_LINK_HERE (best on a phone: ride mode uses your GPS)
+**Try it:** https://spoke-and-story.tech (best on a phone: ride mode uses your GPS)
 
 ## What you can do
 
@@ -44,7 +44,7 @@ The backend is a small FastAPI app. The page is plain HTML and JavaScript, no bu
 You need Python 3.12 and a free [OpenRouteService key](https://openrouteservice.org/dev/#/signup).
 
 ```bash
-git clone <repo-url> spoke-and-story && cd spoke-and-story
+git clone https://github.com/Danialmoa/spoke-and-story.git && cd spoke-and-story
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env      # add your keys
