@@ -15,8 +15,9 @@ NEARBY_TOWNS = 6
 DULL_TYPES = {"railwaystation", "edu", "airport"}
 # Half the area stories try a topic about the area first, half the nearest untold place; each is the other's fallback.
 TOPIC_SHARE = 0.5
-# Two Gemma calls (~2 s each, sometimes 4-5) plus ~1 s of lookups; the page gives up after 10 s.
-BUDGET_S = 8
+# Two Gemma calls (~2 s each, sometimes 4-5) plus ~1 s of lookups. A quiet stretch can wait: the page gives up after
+# 25 s, and 8 s lost area stories on the first slow minute of a real ride.
+BUDGET_S = 20
 EMPTY = {"place": None, "topic": None, "text": ""}
 
 

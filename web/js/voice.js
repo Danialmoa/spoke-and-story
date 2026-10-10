@@ -41,6 +41,9 @@ const SOON = 1;
 const NOW = 2;
 
 const VOICE = 'am_santa';
+// A story whose clip couldn't be fetched (no signal, a timeout) goes back in the queue instead of being lost.
+const STORY_RETRIES = 2;
+const STORY_RETRY_MS = 15000;
 
 const voice = {
   status: 'idle',
@@ -151,9 +154,9 @@ async function fetchLine(job) {
         job.resolve(null);
       }
     }
-  } catch {
+  } catch (err) {
     // No signal, e.g. in a tunnel: Kokoro's download would fail too. The line is asked for again when it's needed.
-    if (!voice.offline) rideLog('ElevenLabs out of reach (no signal?), lines are tried again when needed');
+    if (!voice.offline) rideLog(`ElevenLabs out of reach (${err.name === 'TimeoutError' ? 'no answer in 20 s' : err.message}), lines are tried again when needed`);
     voice.offline = true;
     if (voice.engine === 'eleven') voice.cache.delete(job.message.text);
     job.resolve(null);
@@ -336,9 +339,9 @@ function unlockAudio() {
 const expired = (item) => (item.until != null && ride.km > item.until) || Boolean(item.stale?.());
 
 // Turns jump ahead of stories in the queue but never cut off what is already playing.
-function say(text, { urgent = false, title = '', until = null, stale = null } = {}) {
+function say(text, { urgent = false, title = '', until = null, stale = null, retries = 0 } = {}) {
   if (!ride.voice || !text) return;
-  const item = { text, title, until, stale, urgent };
+  const item = { text, title, until, stale, urgent, retries };
   if (urgent) {
     const firstStory = voice.queue.findIndex((q) => !q.urgent);
     voice.queue.splice(firstStory < 0 ? voice.queue.length : firstStory, 0, item);
@@ -392,6 +395,14 @@ async function speakOne(item) {
     const why = engine !== voice.engine ? 'voice switched'
       : !url ? `voice not ready after ${Math.round((Date.now() - asked) / 1000)} s`
         : expired(item) ? 'too late' : '';
+    // Requeued after a pause rather than retried here, so the turns queued behind it aren't held up.
+    if (!url && !i && !item.urgent && voice.offline && item.retries < STORY_RETRIES && engine === voice.engine) {
+      rideLog(`voice out of reach, ${title} again in ${STORY_RETRY_MS / 1000} s`);
+      setTimeout(() => {
+        if (session === voice.session && !expired(item)) say(item.text, { ...item, retries: item.retries + 1 });
+      }, STORY_RETRY_MS);
+      return;
+    }
     if (why) {
       rideLog(`${i ? `stopped after ${i} of ${parts.length} sentences` : 'skipped'}, ${why}: ${title}`);
       return;

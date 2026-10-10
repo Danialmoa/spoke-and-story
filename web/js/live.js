@@ -13,6 +13,12 @@ const STALE_KM = { story: 1, spot: 0.5 };
 // How long Simulate crawls for a live line still being written or voiced, and how long a rider inside a place's circle
 // waits for its chapter before hearing the short line instead.
 const LIVE_WAIT_MS = 30000;
+// A chapter is asked for ~2 km before its circle, so a slow or failed answer has minutes to be asked again: asked
+// ~300 m ahead with an 8 s timeout, one slow minute on a real ride lost the place's story.
+const CHAPTER_ASK_KM = 2;
+const CHAPTER_TIMEOUT_MS = 30000;
+const CHAPTER_TRIES = 3;
+const RETRY_MS = 20000;
 const COMMENT_GAP_MS = 120000;
 const QUIET_NEAR_KM = 0.5;
 const REROUTE_AFTER_MS = 15000;
@@ -50,13 +56,18 @@ function rideContext() {
     grade_pct: Math.round(gradeAt(ride.idx)) || 0,
     climb_done_m: Math.round(climbDone()),
     local_time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-    said: ride.said,
+    // The server takes lines up to 1500 characters; one longer line would fail every live line after it.
+    said: ride.said.map((s) => s.slice(0, 1500)),
   };
 }
 
-function liveLine(event, extra) {
+// '' when there's no line; the ride log says why (a timeout, no signal, or the server's answer).
+function liveLine(event, extra, timeoutMs) {
   const context = { thread: ride.story?.thread || null, ...rideContext(), ...extra };
-  return api.live({ event, bike: bikeOf(), context }).then((r) => r.text || '', () => '');
+  return api.live({ event, bike: bikeOf(), context }, timeoutMs).then((r) => r.text || '', (err) => {
+    rideLog(`${event} line error: ${err.message}`);
+    return '';
+  });
 }
 
 function kmToRoute(pos, coords) {
@@ -87,22 +98,29 @@ const leadKm = () => (ride.mode === 'sim' ? 2 : Math.min(1.5, Math.max(0.3, ride
 // The odometer counts every fix, so riding a way of one's own counts too.
 const due = (stop) => !ride.spoken.has(stop.key) && (Boolean(state.req?.end) || live.odo >= stop.km / 2);
 
+// The chapter is the place's story, so a failed one is asked for again, RETRY_MS apart, while the place isn't told.
+// Until the last try fails, text stays null: the rider entering the circle still waits for it (LIVE_WAIT_MS).
 function askLive(stop) {
-  if (live.lines.has(stop.key)) return;
-  const line = { text: null, waitFrom: null };
-  live.lines.set(stop.key, line);
+  let line = live.lines.get(stop.key);
+  if (line && (line.asking || line.text != null || Date.now() < line.retryAt)) return;
+  if (!line) {
+    line = { text: null, waitFrom: null, tries: 0, asking: false, retryAt: 0 };
+    live.lines.set(stop.key, line);
+  }
   const story = stop.type === 'story';
   const context = story
     ? { place: stop.name, beat: stop.beat || null, facts: stop.facts || null, told_before: stop.told }
     : { place: stop.name, base: stop.note };
-  const ask = () => liveLine(story ? 'chapter' : 'spot', context);
-  rideLog(`asked live line: ${stop.name}`);
-  // The chapter is the place's story, so a failed one is asked for once more if the place isn't told yet.
-  ask().then((text) => {
-    if (text || !story || ride.spoken.has(stop.key)) return text;
-    rideLog(`live line failed, asking again: ${stop.name}`);
-    return ask();
-  }).then((text) => {
+  line.asking = true;
+  line.tries += 1;
+  rideLog(`asked live line${line.tries > 1 ? ` (try ${line.tries})` : ''}: ${stop.name}`);
+  liveLine(story ? 'chapter' : 'spot', context, story ? CHAPTER_TIMEOUT_MS : undefined).then((text) => {
+    line.asking = false;
+    if (!text && story && line.tries < CHAPTER_TRIES && !ride.spoken.has(stop.key)) {
+      line.retryAt = Date.now() + RETRY_MS;
+      rideLog(`live line failed, asking again in ${RETRY_MS / 1000} s: ${stop.name}`);
+      return;
+    }
     line.text = text;
     rideLog(`live line ${text ? 'written' : 'failed'}: ${stop.name}`);
     if (!ride.spoken.has(stop.key)) prepare(text, { first: true });
@@ -144,9 +162,12 @@ function voiceLiveLines() {
   }
 }
 
+// Chapters are asked well ahead (CHAPTER_ASK_KM); spots, short and cheap to miss, just ahead.
+const askKm = (stop) => (stop.type === 'story' ? Math.max(CHAPTER_ASK_KM, leadKm()) : leadKm());
+
 function narrateStops(pos) {
   const near = ride.stops.filter(due).map((stop) => ({ stop, km: kmTo(pos, stop) }))
-    .filter(({ stop, km }) => km < stop.radius + leadKm())
+    .filter(({ stop, km }) => km < stop.radius + askKm(stop))
     .sort((a, b) => a.km - b.km);
   for (const { stop, km } of near) {
     askLive(stop);
@@ -233,7 +254,10 @@ function watchArea(pos, now) {
     live.topics.push(...heard);
     rideLog(r.text ? `area story written: ${r.place}` : 'area story: nothing to say');
     return { text: r.text || '', title: r.place || 'Around here' };
-  }, () => ({ text: '' })).finally(() => { live.asking = false; });
+  }, (err) => {
+    rideLog(`area story error: ${err.message}`);
+    return { text: '' };
+  }).finally(() => { live.asking = false; });
   sayLive(ask, () => ride.planned !== planned || farFrom(point, AREA_STALE_KM)());
 }
 
@@ -272,9 +296,13 @@ async function reroute(pos) {
   live.lastReroute = Date.now();
   rideLog('rerouting…');
   const body = { points: reroutePoints(pos), bike: bikeOf(), priority: state.req?.priority || state.priority };
-  const fresh = await api.reroute(body).catch(() => null);
+  let why = 'no route';
+  const fresh = await api.reroute(body).catch((err) => {
+    why = err.message;
+    return null;
+  });
   live.rerouting = false;
-  rideLog(fresh?.coords?.length ? `new route: ${fresh.distance_km} km` : 'reroute failed');
+  rideLog(fresh?.coords?.length ? `new route: ${fresh.distance_km} km` : `reroute failed: ${why}`);
   // Back on the dashed line by now: keep the planned route. On failure the off-route banner stays.
   if (!fresh?.coords?.length || ride.route !== route || !ride.offRoute || $('#ride').hidden) return;
   swapRoute(fresh);

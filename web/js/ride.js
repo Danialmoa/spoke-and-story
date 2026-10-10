@@ -195,6 +195,8 @@ function onPosition({ lat, lon, speedKmh = null, heading = null, accuracyM = 0 }
   }
   if (heading == null) heading = last && haversineKm(last.pos, pos) > 0.005 ? bearing(last.pos, pos) : last?.heading ?? 0;
   ride.lastFix = { pos, t: now, heading };
+  // The latest real fix, so "My location" and the dot after the ride are where the rider is now.
+  if (ride.mode === 'gps') state.here = `${lat.toFixed(5)},${lon.toFixed(5)}`;
   ride.speed = speedKmh || 0;
   ride.rider.setLatLng(pos);
   ride.rider.getElement()?.style.setProperty('--h', `${heading}deg`);
@@ -237,6 +239,7 @@ async function startRide(simulate) {
   // The dot starts where the rider is (when known), not at the route's start, until the first GPS fix.
   const here = !simulate && state.here ? state.here.split(',').map(Number) : route.coords[0];
   resetLive();
+  hideHere();
   $('#ride').hidden = false;
   document.body.classList.add('riding');
   $('#ride-frame').className = `${$('#map-frame').className} ride-frame`;
@@ -303,6 +306,7 @@ function endRide() {
   ride.wake = null;
   stopVoice();
   if (ride.rider) map.m.removeLayer(ride.rider);
+  showHere(false);
   drawSpots([]);
   drawRoutes();
   $('#map-frame').prepend($('#map'));

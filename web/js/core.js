@@ -105,10 +105,11 @@ const api = {
   places: (q, near) => (state.live
     ? getJson(`/api/places?q=${encodeURIComponent(q)}${near ? `&near=${encodeURIComponent(near)}` : ''}`)
     : mockPlaces(q)),
-  // The server can take 20-40 s when it falls back to Google; by then the pre-written line is the better choice.
-  live: (body) => (state.live ? postJson('/api/live', body, 8000) : mockLive(body)),
+  // Speed, spot and reroute lines are about this moment: after 8 s they're too late. A chapter is asked for a few
+  // minutes before its place, so it can wait for the server's Google fallback (20-40 s) instead of being lost.
+  live: (body, timeoutMs = 8000) => (state.live ? postJson('/api/live', body, timeoutMs) : mockLive(body)),
   spots: (coords) => (state.live ? postJson('/api/spots', { coords }) : mockSpots(coords)),
-  area: (body) => (state.live ? postJson('/api/area', body, 10000) : mockArea(body)),
+  area: (body) => (state.live ? postJson('/api/area', body, 25000) : mockArea(body)),
   reroute: (body) => (state.live ? postJson('/api/reroute', body) : mockReroute(body)),
   event: (body) => {
     if (state.live) postJson('/api/event', body).catch(() => {});
