@@ -70,8 +70,13 @@ function ensureStory(route) {
   ensureBrief(route);
   if (!stories.has(route)) {
     loadVoice();
-    const story = api.story(state.req || readForm(), route).catch(() => null);
+    const story = api.story(state.req || readForm(), route).catch((err) => {
+      if (!$('#ride').hidden) rideLog(`story error: ${err.message}`);
+      return null;
+    });
     stories.set(route, story);
+    // A failed story is asked for again (useStory), not kept as the route's story.
+    story.then((s) => !s && stories.get(route) === story && stories.delete(route));
     story.then((s) => route === currentRoute() && voiceAhead() && prepare(s?.intro, { first: true }));
   }
   return stories.get(route);
@@ -195,6 +200,8 @@ function onPosition({ lat, lon, speedKmh = null, heading = null, accuracyM = 0 }
   }
   if (heading == null) heading = last && haversineKm(last.pos, pos) > 0.005 ? bearing(last.pos, pos) : last?.heading ?? 0;
   ride.lastFix = { pos, t: now, heading };
+  // The latest real fix, so "My location" and the dot after the ride are where the rider is now.
+  if (ride.mode === 'gps') state.here = `${lat.toFixed(5)},${lon.toFixed(5)}`;
   ride.speed = speedKmh || 0;
   ride.rider.setLatLng(pos);
   ride.rider.getElement()?.style.setProperty('--h', `${heading}deg`);
@@ -229,7 +236,7 @@ async function startRide(simulate) {
   Object.assign(ride, {
     route, planned: route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
     idx: 0, km: 0, kmBase: 0, climbBase: 0, speed: 0, offRoute: false, lastFix: null, spoken: new Set(), said: [], story: null,
-    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false, log: [],
+    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false, briefSaid: false, log: [],
   });
   // iOS offers "Undo Typing" on every shake while a search box still has focus: on a bike that's all the time.
   document.activeElement?.blur?.();
@@ -237,6 +244,7 @@ async function startRide(simulate) {
   // The dot starts where the rider is (when known), not at the route's start, until the first GPS fix.
   const here = !simulate && state.here ? state.here.split(',').map(Number) : route.coords[0];
   resetLive();
+  hideHere();
   $('#ride').hidden = false;
   document.body.classList.add('riding');
   $('#ride-frame').className = `${$('#map-frame').className} ride-frame`;
@@ -255,15 +263,7 @@ async function startRide(simulate) {
     ride.storyWait = false;
     if (!voice.busy) showSubtitle(null);
   }, STORY_WAIT_MS);
-  ensureStory(route).then((story) => {
-    if (ride.planned !== route || $('#ride').hidden) return;
-    ride.story = story;
-    ride.storyWait = false;
-    setStops();
-    if (!voice.busy) showSubtitle(null);
-    if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
-    sayBrief(route);
-  });
+  useStory(route);
   ensureSpots(route).then((spots) => {
     if (ride.planned !== route || $('#ride').hidden) return;
     ride.spots = spots;
@@ -295,6 +295,32 @@ async function startRide(simulate) {
   }
 }
 
+// The story holds every place's chapter: without it the whole ride is area stories only. One that failed, e.g. with
+// no signal at the start, is asked for again.
+const STORY_ASKS = 4;
+const STORY_ASK_AGAIN_MS = 30000;
+
+function useStory(route, tries = 1) {
+  ensureStory(route).then((story) => {
+    if (ride.planned !== route || $('#ride').hidden) return;
+    ride.storyWait = false;
+    if (!voice.busy) showSubtitle(null);
+    if (!story) {
+      if (tries < STORY_ASKS) {
+        rideLog(`no story yet, asking again in ${STORY_ASK_AGAIN_MS / 1000} s`);
+        setTimeout(() => useStory(route, tries + 1), STORY_ASK_AGAIN_MS);
+      }
+      sayBrief(route);
+      return;
+    }
+    ride.story = story;
+    setStops();
+    rideLog(`story ready: ${story.stories?.length || 0} places`);
+    if (story.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
+    sayBrief(route);
+  });
+}
+
 function endRide() {
   clearInterval(ride.timer);
   if (ride.watch != null) navigator.geolocation.clearWatch(ride.watch);
@@ -303,6 +329,7 @@ function endRide() {
   ride.wake = null;
   stopVoice();
   if (ride.rider) map.m.removeLayer(ride.rider);
+  showHere(false);
   drawSpots([]);
   drawRoutes();
   $('#map-frame').prepend($('#map'));

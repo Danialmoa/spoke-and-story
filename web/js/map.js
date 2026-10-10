@@ -154,7 +154,13 @@ function showHere(pan) {
     map.here = L.marker(pos, { icon, interactive: false, keyboard: false, zIndexOffset: 900 }).addTo(map.m);
   }
   map.here.setLatLng(pos);
+  if (!map.m.hasLayer(map.here)) map.here.addTo(map.m);
   if (pan) map.m.setView(pos, Math.max(map.m.getZoom(), 13));
+}
+
+// During a ride the arrow is the rider: a second dot from before the ride showed them somewhere they weren't.
+function hideHere() {
+  if (map.m && map.here) map.m.removeLayer(map.here);
 }
 
 function hideHover() {
