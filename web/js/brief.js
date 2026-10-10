@@ -31,7 +31,10 @@ function sayBrief(route) {
   briefs.get(route)?.then(async (b) => {
     if (!b?.spoken || ride.planned !== route || $('#ride').hidden || ride.km >= 0.5) return;
     await prepare(b.spoken, { first: true });
-    if (ride.planned === route && !$('#ride').hidden && ride.km < 0.5) say(b.spoken, { title: 'Before you go' });
+    // Once a ride: it's asked again when a failed story comes in later.
+    if (ride.planned !== route || $('#ride').hidden || ride.km >= 0.5 || ride.briefSaid) return;
+    ride.briefSaid = true;
+    say(b.spoken, { title: 'Before you go' });
   });
 }
 

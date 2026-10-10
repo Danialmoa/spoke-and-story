@@ -70,8 +70,13 @@ function ensureStory(route) {
   ensureBrief(route);
   if (!stories.has(route)) {
     loadVoice();
-    const story = api.story(state.req || readForm(), route).catch(() => null);
+    const story = api.story(state.req || readForm(), route).catch((err) => {
+      if (!$('#ride').hidden) rideLog(`story error: ${err.message}`);
+      return null;
+    });
     stories.set(route, story);
+    // A failed story is asked for again (useStory), not kept as the route's story.
+    story.then((s) => !s && stories.get(route) === story && stories.delete(route));
     story.then((s) => route === currentRoute() && voiceAhead() && prepare(s?.intro, { first: true }));
   }
   return stories.get(route);
@@ -231,7 +236,7 @@ async function startRide(simulate) {
   Object.assign(ride, {
     route, planned: route, kms: routeKm(route), steps: keyTurns(route, routeKm(route)), climbLeft: climbLeftFrom(route.coords),
     idx: 0, km: 0, kmBase: 0, climbBase: 0, speed: 0, offRoute: false, lastFix: null, spoken: new Set(), said: [], story: null,
-    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false, log: [],
+    spots: [], stops: [], mode: simulate ? 'sim' : 'gps', storyWait: true, remembered: false, briefSaid: false, log: [],
   });
   // iOS offers "Undo Typing" on every shake while a search box still has focus: on a bike that's all the time.
   document.activeElement?.blur?.();
@@ -258,15 +263,7 @@ async function startRide(simulate) {
     ride.storyWait = false;
     if (!voice.busy) showSubtitle(null);
   }, STORY_WAIT_MS);
-  ensureStory(route).then((story) => {
-    if (ride.planned !== route || $('#ride').hidden) return;
-    ride.story = story;
-    ride.storyWait = false;
-    setStops();
-    if (!voice.busy) showSubtitle(null);
-    if (story?.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
-    sayBrief(route);
-  });
+  useStory(route);
   ensureSpots(route).then((spots) => {
     if (ride.planned !== route || $('#ride').hidden) return;
     ride.spots = spots;
@@ -296,6 +293,32 @@ async function startRide(simulate) {
       { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
     );
   }
+}
+
+// The story holds every place's chapter: without it the whole ride is area stories only. One that failed, e.g. with
+// no signal at the start, is asked for again.
+const STORY_ASKS = 4;
+const STORY_ASK_AGAIN_MS = 30000;
+
+function useStory(route, tries = 1) {
+  ensureStory(route).then((story) => {
+    if (ride.planned !== route || $('#ride').hidden) return;
+    ride.storyWait = false;
+    if (!voice.busy) showSubtitle(null);
+    if (!story) {
+      if (tries < STORY_ASKS) {
+        rideLog(`no story yet, asking again in ${STORY_ASK_AGAIN_MS / 1000} s`);
+        setTimeout(() => useStory(route, tries + 1), STORY_ASK_AGAIN_MS);
+      }
+      sayBrief(route);
+      return;
+    }
+    ride.story = story;
+    setStops();
+    rideLog(`story ready: ${story.stories?.length || 0} places`);
+    if (story.intro && ride.km < 2) say(story.intro, { title: 'Your ride' });
+    sayBrief(route);
+  });
 }
 
 function endRide() {

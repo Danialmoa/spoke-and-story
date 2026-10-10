@@ -127,6 +127,10 @@ For each topic:
 - place: the town or area it is about, written as in the query
 Reply with JSON only: {"topics": [{"topic": "...", "local": "...", "place": "..."}]}"""
 
+# Backboard answers a live line in ~2 s. When it hangs, the rider's page gives up long before 60 s, so these calls
+# move on to Google sooner; the page waits up to 30 s for a chapter and 25 s for an area story.
+QUICK_TIMEOUT_S = 12
+
 TASKS = {
     CHAT_PROMPT: "chat",
     PICK_PROMPT: "pick route",
@@ -179,7 +183,8 @@ def _backboard(instructions: str, content: str) -> str:
         "stream": False,
     }
     with sentry_sdk.start_span(op="gen_ai.chat", name=f"chat {model}") as span:
-        r = httpx.post(f"{BACKBOARD_URL}/threads/messages", headers=_headers(), json=body, timeout=60)
+        timeout = QUICK_TIMEOUT_S if instructions in (LIVE_PROMPT, TOPICS_PROMPT) else 60
+        r = httpx.post(f"{BACKBOARD_URL}/threads/messages", headers=_headers(), json=body, timeout=timeout)
         r.raise_for_status()
         reply = r.json()
         span.set_data("gen_ai.request.model", model)
