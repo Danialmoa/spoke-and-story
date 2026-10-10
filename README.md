@@ -7,6 +7,10 @@ Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge: open-source AI tha
 
 **Try it:** https://spoke-and-story.tech (best on a phone: ride mode uses your GPS)
 
+<p align="center">
+  <img src=".github/media/demo.gif" width="300" alt="10-second demo on a phone: typing Como, three routes on the map, Gemma's pick, then a simulated ride where Santa starts the story">
+</p>
+
 ## What you can do
 
 - **Where to?** Type a destination (typos are fine), pick Scenic, Flattest or Fastest and your bike. You get up to
@@ -30,6 +34,23 @@ Built for the DEV Hacktoberfest 2026 "Touch Grass" challenge: open-source AI tha
 **On-device voice:** if you pick Kokoro (or ElevenLabs isn't available), your browser downloads the voice model
 once: about 92 MB (`Kokoro-82M-v1.0-ONNX`, q8) plus about 22 MB for the ONNX runtime, so roughly 115 MB. Use Wi-Fi
 for that one. After that it's cached.
+
+## Screenshots
+
+![On a computer: the ride form, and the chosen route from Lecco to Como with the alternative dotted on the map](.github/media/desktop.jpg)
+
+<table>
+  <tr>
+    <td><img src=".github/media/routes.jpg" width="260" alt="Routes on the map, the elevation profile and Gemma's pick"></td>
+    <td><img src=".github/media/ride.jpg" width="260" alt="Ride mode: the next turn, Santa's chapter about the Azzone Visconti bridge in Lecco, and bike-computer stats"></td>
+    <td><img src=".github/media/buddy.jpg" width="260" alt="Ride buddy chat asking one question before it plans"></td>
+  </tr>
+  <tr>
+    <td align="center">Routes and Gemma's pick</td>
+    <td align="center">A chapter of the story, mid-ride</td>
+    <td align="center">Ride buddy</td>
+  </tr>
+</table>
 
 ## How it works
 
