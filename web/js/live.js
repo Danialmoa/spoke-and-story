@@ -24,7 +24,9 @@ const QUIET_NEAR_KM = 0.5;
 const REROUTE_AFTER_MS = 15000;
 const REROUTE_GAP_MS = 30000;
 // Santa fills a quiet stretch quickly: on the first real rides 90% of the time was silence.
-const AREA_QUIET_MS = 150000;
+const AREA_QUIET_MS = 90000;
+// After an area story that failed or had nothing to say, the next one is asked sooner than a full quiet stretch.
+const AREA_RETRY_MS = 30000;
 const AREA_QUIET_KM = 1.5;
 const AREA_STALE_KM = 2;
 const round1 = (x) => Math.round(x * 10) / 10;
@@ -236,7 +238,8 @@ function watchSpeed(pos, now) {
 // After a long quiet with no place ahead, a story about wherever the rider is, e.g. on a way of their own.
 function watchArea(pos, now) {
   // A plot-twist line doesn't end the quiet: a rider on a way of their own would otherwise never get an area story.
-  if (voice.busy && voice.item?.title !== 'New route') live.quietFrom = { t: now, km: live.odo };
+  // Turns don't end the quiet either: in town they come every minute or two, and kept area stories from ever starting.
+  if (voice.busy && !voice.item?.urgent && voice.item?.title !== 'New route') live.quietFrom = { t: now, km: live.odo };
   const quiet = ride.mode === 'sim' ? live.odo - live.quietFrom.km >= AREA_QUIET_KM : now - live.quietFrom.t >= AREA_QUIET_MS;
   if (!quiet || live.asking || !ride.voice || ride.stops.some((s) => due(s) && kmTo(pos, s) < s.radius + leadKm())) return;
   live.quietFrom = { t: now, km: live.odo };
@@ -257,6 +260,10 @@ function watchArea(pos, now) {
   }, (err) => {
     rideLog(`area story error: ${err.message}`);
     return { text: '' };
+  }).then((line) => {
+    // Nothing to say: the quiet goes on, so try again in AREA_RETRY_MS instead of a whole quiet stretch.
+    if (!line.text) live.quietFrom = { t: Date.now() - AREA_QUIET_MS + AREA_RETRY_MS, km: live.odo - AREA_QUIET_KM / 2 };
+    return line;
   }).finally(() => { live.asking = false; });
   sayLive(ask, () => ride.planned !== planned || farFrom(point, AREA_STALE_KM)());
 }
