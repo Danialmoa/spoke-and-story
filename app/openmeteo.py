@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
@@ -61,7 +61,7 @@ def at(lat: float, lon: float, when: datetime) -> dict:
     )
     r.raise_for_status()
     d = r.json()
-    local = when.astimezone(timezone.utc).replace(tzinfo=None) + timedelta(seconds=d["utc_offset_seconds"])
+    local = when.astimezone(UTC).replace(tzinfo=None) + timedelta(seconds=d["utc_offset_seconds"])
     hourly = d["hourly"]
     i = hourly["time"].index(local.strftime("%Y-%m-%dT%H:00"))
     sunset = d["daily"]["sunset"][d["daily"]["time"].index(local.strftime("%Y-%m-%d"))]

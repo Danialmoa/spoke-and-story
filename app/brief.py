@@ -1,7 +1,7 @@
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, wait
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from . import agent, destination, news
 
@@ -107,7 +107,7 @@ def _ask(content: str) -> dict:
     pool.shutdown(wait=False)  # a slow Google fallback finishes in the background; the brief doesn't wait for it
     try:
         return future.result(timeout=LLM_S)
-    except Exception as exc:  # optional extra: slow, failed or garbled all mean "no brief", never an error
+    except Exception as exc:  # noqa: BLE001 - slow, failed or garbled all mean "no brief", never an error
         log.warning("brief call failed: %s", type(exc).__name__)
         return {}
 
@@ -126,7 +126,7 @@ def build(start: str, end: str | None, route: dict) -> dict:
     """A "before you go" brief: {"items": [{"kind", "text"}], "spoken"}. Never raises: lookups that fail or are slow
     are left out, and EMPTY comes back when there's nothing to tell or Gemma fails."""
     coords = route["coords"]
-    arrive = datetime.now(timezone.utc) + timedelta(minutes=route.get("duration_min") or 0)
+    arrive = datetime.now(UTC) + timedelta(minutes=route.get("duration_min") or 0)
     pool = ThreadPoolExecutor(3)
     lookups = {
         "news": pool.submit(news.near, coords[0][0], coords[0][1], NEWS_WAIT_S),

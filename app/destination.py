@@ -101,11 +101,11 @@ def _public(host: str) -> bool:
 
 
 def _meta(page: str) -> str:
-    title = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
+    title = re.search(r"<title[^>]*>(.*?)</title>", page, re.IGNORECASE | re.DOTALL)
     parts = [title.group(1)] if title else []
-    for tag in re.findall(r"<meta\b[^>]*>", page, re.I):
-        content = re.search(r"content\s*=\s*(\"[^\"]*\"|'[^']*')", tag, re.I)
-        if content and re.search(r"(name|property)\s*=\s*[\"'](og:)?description[\"']", tag, re.I):
+    for tag in re.findall(r"<meta\b[^>]*>", page, re.IGNORECASE):
+        content = re.search(r"content\s*=\s*(\"[^\"]*\"|'[^']*')", tag, re.IGNORECASE)
+        if content and re.search(r"(name|property)\s*=\s*[\"'](og:)?description[\"']", tag, re.IGNORECASE):
             parts.append(content.group(1)[1:-1])
             break
     return " | ".join(" ".join(html.unescape(p).split()) for p in parts if p.strip())[:300]

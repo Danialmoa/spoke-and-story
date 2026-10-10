@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -178,7 +178,7 @@ def test_weather_at_arrival_is_in_local_time_with_sunset(monkeypatch):
         "daily": {"time": ["2026-10-09"], "sunset": ["2026-10-09T18:47"]},
     }
     monkeypatch.setattr(openmeteo.httpx, "get", lambda *args, **kwargs: _Response(data=data))
-    arrive = datetime(2026, 10, 9, 17, 5, tzinfo=timezone.utc)
+    arrive = datetime(2026, 10, 9, 17, 5, tzinfo=UTC)
     assert openmeteo.at(45.9, 9.3, arrive) == {
         "day": "Friday",
         "time": "19:05",

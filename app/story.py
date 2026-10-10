@@ -67,7 +67,7 @@ def _section(title: str) -> str:
     }
     pages = _get(f"{WIKI}/w/api.php", params).get("query", {}).get("pages", [])
     # [lead, heading, text, heading, text, ...]
-    parts = re.split(r"^==+ (.+?) ==+$", pages[0].get("extract", "") if pages else "", flags=re.M)
+    parts = re.split(r"^==+ (.+?) ==+$", pages[0].get("extract", "") if pages else "", flags=re.MULTILINE)
     sections = [
         f"{head}: {text.strip()}"
         for head, text in zip(parts[1::2], parts[2::2])
