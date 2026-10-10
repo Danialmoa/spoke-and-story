@@ -96,6 +96,6 @@ def tell(point: tuple[float, float], bike: str, thread: str | None, told: list[s
     pool.shutdown(wait=False)  # a slow Google fallback finishes in the background; the rider doesn't wait for it
     try:
         return future.result(timeout=BUDGET_S)
-    except Exception as exc:  # optional line: slow, failed or garbled all mean the page stays quiet, never an error
+    except Exception as exc:  # noqa: BLE001 - slow, failed or garbled all mean the page stays quiet, never an error
         log.warning("area story failed: %s", type(exc).__name__)
         return EMPTY

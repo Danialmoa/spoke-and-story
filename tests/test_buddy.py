@@ -118,7 +118,7 @@ def test_buddy_hands_only_new_facts_back_to_the_phone(backboard):
 
 
 def test_new_facts_come_back_with_a_plan_too(backboard, monkeypatch):
-    sent, replies = backboard
+    _, replies = backboard
     replies += [
         _needs(_call("plan_routes", start="Lecco", end="Varenna", bike="road", priority="flat")),
         _done('{"best": "B", "text": "You hate climbs, so B.", "remember": ["Hates climbs"]}'),
